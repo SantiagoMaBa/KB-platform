@@ -30,7 +30,7 @@ export default function ChatPage() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -45,6 +45,11 @@ export default function ChatPage() {
     setInput("");
     setLoading(true);
 
+    // Reset textarea height
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "44px";
+    }
+
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
@@ -57,32 +62,23 @@ export default function ChatPage() {
       });
 
       const data = await res.json();
-
-      if (res.ok) {
-        setMessages((prev) => [
-          ...prev,
-          { role: "assistant", content: data.content },
-        ]);
-      } else {
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: "assistant",
-            content: `Error: ${data.error || "No se pudo obtener respuesta."}`,
-          },
-        ]);
-      }
-    } catch {
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          content: "Error de conexión. Verifica tu red e intenta de nuevo.",
+          content: res.ok
+            ? data.content
+            : `Error: ${data.error || "Sin respuesta"}`,
         },
+      ]);
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: "Error de conexión. Inténtalo de nuevo." },
       ]);
     } finally {
       setLoading(false);
-      inputRef.current?.focus();
+      textareaRef.current?.focus();
     }
   };
 
@@ -93,51 +89,56 @@ export default function ChatPage() {
     }
   };
 
-  const clearChat = () => {
-    setMessages([]);
-    setInput("");
+  const autoResize = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value);
+    e.target.style.height = "44px";
+    e.target.style.height = `${Math.min(e.target.scrollHeight, 128)}px`;
   };
 
   return (
     <AppShell>
       <Header
         title="Asistente IA"
-        subtitle={`Consultando KB de ${CLIENT_NAME}`}
+        subtitle={`KB de ${CLIENT_NAME}`}
         actions={
           messages.length > 0 ? (
-            <button onClick={clearChat} className="btn-ghost p-2" title="Nueva conversación">
-              <RefreshCw className="w-4 h-4" />
+            <button
+              onClick={() => setMessages([])}
+              className="btn-ghost text-xs gap-1.5"
+              title="Nueva conversación"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Nueva conversación
             </button>
           ) : undefined
         }
       />
 
-      <div className="flex-1 flex flex-col min-h-0">
-        {/* Messages area */}
-        <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
+      <div className="flex-1 flex flex-col min-h-0 bg-slate-50">
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto px-4 py-6">
           {messages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full gap-8 pb-10">
-              {/* Welcome */}
+            /* Welcome screen */
+            <div className="flex flex-col items-center justify-center min-h-[60vh] gap-8">
               <div className="text-center space-y-3 max-w-md">
-                <div className="w-14 h-14 rounded-2xl bg-brand-600/20 border border-brand-500/30 flex items-center justify-center mx-auto">
-                  <Sparkles className="w-7 h-7 text-brand-400" />
+                <div className="w-14 h-14 rounded-2xl bg-brand-600 flex items-center justify-center mx-auto shadow-card-md">
+                  <Sparkles className="w-7 h-7 text-white" />
                 </div>
-                <h2 className="font-display font-bold text-xl text-surface-50">
+                <h2 className="font-display font-bold text-xl text-slate-900">
                   Asistente de {CLIENT_NAME}
                 </h2>
-                <p className="text-surface-400 text-sm leading-relaxed">
+                <p className="text-slate-500 text-sm leading-relaxed">
                   Consulta contratos, pagos, reglamentos, tarifas y eventos
-                  directamente desde la base de conocimiento de la plaza.
+                  desde la base de conocimiento de la plaza.
                 </p>
               </div>
 
-              {/* Starters */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-xl">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full max-w-xl">
                 {STARTERS.map((s) => (
                   <button
                     key={s}
                     onClick={() => sendMessage(s)}
-                    className="text-left px-4 py-3 rounded-xl bg-surface-900 border border-surface-700 hover:border-brand-500/40 hover:bg-surface-800 text-surface-300 hover:text-surface-100 text-sm transition-all duration-150"
+                    className="text-left px-4 py-3 rounded-xl bg-white border border-slate-200 hover:border-brand-300 hover:bg-brand-50/50 text-slate-600 hover:text-slate-800 text-sm transition-all duration-150 shadow-card text-left"
                   >
                     {s}
                   </button>
@@ -145,7 +146,7 @@ export default function ChatPage() {
               </div>
             </div>
           ) : (
-            <>
+            <div className="max-w-3xl mx-auto space-y-4">
               {messages.map((msg, i) => (
                 <div
                   key={i}
@@ -155,17 +156,17 @@ export default function ChatPage() {
                   )}
                 >
                   {msg.role === "assistant" && (
-                    <div className="w-8 h-8 rounded-lg bg-brand-600/20 border border-brand-500/30 flex items-center justify-center shrink-0 mt-0.5">
-                      <Bot className="w-4 h-4 text-brand-400" />
+                    <div className="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center shrink-0 mt-0.5 shadow-sm">
+                      <Bot className="w-4 h-4 text-white" />
                     </div>
                   )}
 
                   <div
                     className={clsx(
-                      "max-w-[78%] rounded-2xl px-4 py-3 text-sm",
+                      "max-w-[78%] rounded-2xl px-4 py-3 text-sm shadow-card",
                       msg.role === "user"
                         ? "bg-brand-600 text-white rounded-tr-sm"
-                        : "bg-surface-900 border border-surface-800 text-surface-200 rounded-tl-sm"
+                        : "bg-white border border-slate-200 text-slate-800 rounded-tl-sm"
                     )}
                   >
                     {msg.role === "assistant" ? (
@@ -175,15 +176,15 @@ export default function ChatPage() {
                         </ReactMarkdown>
                       </div>
                     ) : (
-                      <p className="whitespace-pre-wrap leading-relaxed">
+                      <p className="whitespace-pre-wrap leading-relaxed text-[13px]">
                         {msg.content}
                       </p>
                     )}
                   </div>
 
                   {msg.role === "user" && (
-                    <div className="w-8 h-8 rounded-lg bg-surface-700 flex items-center justify-center shrink-0 mt-0.5">
-                      <User className="w-4 h-4 text-surface-300" />
+                    <div className="w-8 h-8 rounded-lg bg-slate-200 flex items-center justify-center shrink-0 mt-0.5">
+                      <User className="w-4 h-4 text-slate-500" />
                     </div>
                   )}
                 </div>
@@ -191,10 +192,10 @@ export default function ChatPage() {
 
               {loading && (
                 <div className="flex gap-3 justify-start animate-fade-in">
-                  <div className="w-8 h-8 rounded-lg bg-brand-600/20 border border-brand-500/30 flex items-center justify-center shrink-0 mt-0.5">
-                    <Bot className="w-4 h-4 text-brand-400" />
+                  <div className="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center shrink-0 mt-0.5 shadow-sm">
+                    <Bot className="w-4 h-4 text-white" />
                   </div>
-                  <div className="bg-surface-900 border border-surface-800 rounded-2xl rounded-tl-sm px-4 py-3">
+                  <div className="bg-white border border-slate-200 rounded-2xl rounded-tl-sm px-4 py-3 shadow-card">
                     <div className="typing-dots">
                       <span />
                       <span />
@@ -203,39 +204,35 @@ export default function ChatPage() {
                   </div>
                 </div>
               )}
-            </>
+
+              <div ref={bottomRef} />
+            </div>
           )}
-          <div ref={bottomRef} />
         </div>
 
-        {/* Input */}
-        <div className="shrink-0 border-t border-surface-800 bg-surface-950/80 backdrop-blur px-4 py-4">
-          <div className="max-w-3xl mx-auto flex gap-3 items-end">
+        {/* Input bar */}
+        <div className="shrink-0 border-t border-slate-200 bg-white px-4 py-3.5">
+          <div className="max-w-3xl mx-auto flex gap-2.5 items-end">
             <textarea
-              ref={inputRef}
+              ref={textareaRef}
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={autoResize}
               onKeyDown={handleKeyDown}
               placeholder="Pregunta sobre contratos, pagos, reglamentos, tarifas..."
               rows={1}
-              className="input resize-none min-h-[44px] max-h-32 py-2.5 leading-relaxed"
+              className="input resize-none min-h-[44px] max-h-32 py-2.5 leading-relaxed text-sm"
               style={{ height: "44px" }}
-              onInput={(e) => {
-                const target = e.target as HTMLTextAreaElement;
-                target.style.height = "44px";
-                target.style.height = `${Math.min(target.scrollHeight, 128)}px`;
-              }}
               disabled={loading}
             />
             <button
               onClick={() => sendMessage(input)}
               disabled={!input.trim() || loading}
-              className="btn-primary p-2.5 shrink-0 h-11"
+              className="btn-primary px-3 py-2.5 shrink-0 h-11"
             >
               <Send className="w-4 h-4" />
             </button>
           </div>
-          <p className="text-center text-[10px] text-surface-600 mt-2">
+          <p className="text-center text-[10px] text-slate-400 mt-2">
             Enter para enviar · Shift+Enter para nueva línea
           </p>
         </div>
