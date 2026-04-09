@@ -32,7 +32,7 @@ export async function listFiles(folder: string): Promise<string[]> {
   return data.map((f) => f.name);
 }
 
-// ── Upload / upsert a file ─────────────────────────────────────────────────────
+// ── Upload / upsert a text file ────────────────────────────────────────────────
 export async function uploadFile(
   storagePath: string,
   content: string
@@ -41,6 +41,19 @@ export async function uploadFile(
   const { error } = await supabase.storage
     .from(BUCKET)
     .upload(storagePath, blob, { upsert: true });
+
+  return !error;
+}
+
+// ── Upload / upsert a binary buffer (for external sync) ───────────────────────
+export async function uploadRawBuffer(
+  storagePath: string,
+  buffer: Buffer,
+  contentType = "text/markdown"
+): Promise<boolean> {
+  const { error } = await supabase.storage
+    .from(BUCKET)
+    .upload(storagePath, buffer, { upsert: true, contentType });
 
   return !error;
 }
