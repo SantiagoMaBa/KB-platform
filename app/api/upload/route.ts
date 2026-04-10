@@ -1,14 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
-import { rawPath } from "@/lib/kb";
+import { rawPath, generateAndUploadIndex } from "@/lib/kb";
 
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
-    const file = formData.get("file") as File | null;
-    const clientId = formData.get("clientId") as string | null;
+
+    const file        = formData.get("file")        as File   | null;
+    const clientId    = formData.get("clientId")    as string | null;
+    const clientName  = formData.get("clientName")  as string | null;
+    const displayName = formData.get("displayName") as string | null;
+    const description = formData.get("description") as string | null;
+    const category    = formData.get("category")    as string | null;
+    const tags        = formData.get("tags")        as string | null;
 
     if (!file || !clientId) {
       return NextResponse.json(
@@ -33,22 +39,26 @@ export async function POST(req: NextRequest) {
       .upload(storagePath, blob, { upsert: true });
 
     if (uploadError) {
-      return NextResponse.json(
-        { error: uploadError.message },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: uploadError.message }, { status: 500 });
     }
 
-    // Upsert document record
+    // Upsert document record with metadata
     await supabase.from("documents").upsert(
       {
-        client_id: clientId,
-        filename: file.name,
+        client_id:    clientId,
+        filename:     file.name,
         storage_path: storagePath,
-        compiled: false,
+        compiled:     false,
+        display_name: displayName?.trim()  || null,
+        description:  description?.trim()  || null,
+        category:     category             || null,
+        tags:         tags?.trim()         || null,
       },
       { onConflict: "client_id,filename" }
     );
+
+    // Regenerate index.md with updated metadata
+    await generateAndUploadIndex(clientId, clientName ?? clientId);
 
     return NextResponse.json({ success: true, path: storagePath });
   } catch (error) {

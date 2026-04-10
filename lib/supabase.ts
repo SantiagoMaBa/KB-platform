@@ -35,6 +35,10 @@ export type Database = {
           filename: string;
           storage_path: string;
           compiled: boolean;
+          display_name: string | null;
+          description: string | null;
+          category: string | null;
+          tags: string | null;
           created_at: string;
         };
         Insert: {
@@ -43,6 +47,10 @@ export type Database = {
           filename: string;
           storage_path: string;
           compiled?: boolean;
+          display_name?: string | null;
+          description?: string | null;
+          category?: string | null;
+          tags?: string | null;
           created_at?: string;
         };
         Update: {
@@ -51,6 +59,10 @@ export type Database = {
           filename?: string;
           storage_path?: string;
           compiled?: boolean;
+          display_name?: string | null;
+          description?: string | null;
+          category?: string | null;
+          tags?: string | null;
           created_at?: string;
         };
       };

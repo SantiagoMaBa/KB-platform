@@ -1,44 +1,68 @@
 import { NextRequest, NextResponse } from "next/server";
 import { openai, MODEL } from "@/lib/openai";
-import { buildKBContext } from "@/lib/kb";
+import { buildKBContextWithIndex } from "@/lib/kb";
 import { supabase } from "@/lib/supabase";
 
 export const runtime = "nodejs";
 
-const SYSTEM_PROMPT = (clientName: string, kbContext: string) => `
-Eres el asistente inteligente de "${clientName}", una plaza comercial.
-Tu rol es ayudar al equipo administrativo a consultar información de la KB de la plaza de forma clara, precisa y profesional.
+// ── System prompt ──────────────────────────────────────────────────────────────
+// Structure: persona → instructions → index (document map) → full wiki content
+const SYSTEM_PROMPT = (
+  clientName: string,
+  indexContent: string | null,
+  wikiContent: string
+) => {
+  const sections: string[] = [
+    `Eres el asistente inteligente de "${clientName}", una plaza comercial.`,
+    `Tu rol es ayudar al equipo administrativo a consultar información de forma clara, precisa y profesional.`,
+    ``,
+    `## Instrucciones de respuesta`,
+    `- Cuando el usuario pregunte sobre métricas, contratos, pagos o adeudos, presenta los datos de forma estructurada con tablas o listas.`,
+    `- Calcula totales, porcentajes o resúmenes cuando sea útil.`,
+    `- Señala ⚠️ alertas que requieran atención: vencimientos próximos, adeudos, etc.`,
+    `- Haz recomendaciones concretas cuando el contexto lo permita.`,
+    `- Si la pregunta no puede responderse con la información disponible, dilo claramente.`,
+    `- Responde siempre en español.`,
+  ];
 
-Cuando el usuario pregunta sobre métricas, contratos, pagos o adeudos:
-- Presenta los datos de forma estructurada con tablas o listas cuando aplique
-- Calcula totales, porcentajes o resúmenes cuando sea útil
-- Señala alertas o situaciones que requieran atención (vencimientos próximos, adeudos, etc.)
-- Haz recomendaciones concretas cuando el contexto lo permita
+  if (indexContent) {
+    sections.push(
+      ``,
+      `---`,
+      ``,
+      `## ÍNDICE DE LA BASE DE CONOCIMIENTO`,
+      `*(Lee esto primero para saber qué documentos existen y cuáles son relevantes para la consulta.)*`,
+      ``,
+      indexContent,
+    );
+  }
 
-Responde siempre en español. Si la pregunta no puede responderse con la información disponible en la KB, dilo claramente.
+  if (wikiContent) {
+    sections.push(
+      ``,
+      `---`,
+      ``,
+      `## CONTENIDO COMPLETO DE LOS DOCUMENTOS`,
+      ``,
+      wikiContent,
+    );
+  }
 
----
-## BASE DE CONOCIMIENTO DE LA PLAZA
-
-${kbContext}
----
-`.trim();
+  return sections.join("\n");
+};
 
 export async function POST(req: NextRequest) {
   try {
     const { messages, clientId, clientName } = await req.json();
 
     if (!clientId || !messages || !Array.isArray(messages)) {
-      return NextResponse.json(
-        { error: "Parámetros inválidos" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Parámetros inválidos" }, { status: 400 });
     }
 
-    // Build KB context server-side
-    const kbContext = await buildKBContext(clientId);
+    // Build KB context: index + wiki (all server-side)
+    const { indexContent, wikiContent } = await buildKBContextWithIndex(clientId);
 
-    if (!kbContext) {
+    if (!indexContent && !wikiContent) {
       return NextResponse.json(
         {
           role: "assistant",
@@ -49,7 +73,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const systemPrompt = SYSTEM_PROMPT(clientName || clientId, kbContext);
+    const systemPrompt = SYSTEM_PROMPT(clientName ?? clientId, indexContent, wikiContent);
 
     const completion = await openai.chat.completions.create({
       model: MODEL,
@@ -66,32 +90,18 @@ export async function POST(req: NextRequest) {
 
     const assistantMessage = completion.choices[0]?.message?.content ?? "";
 
-    // Persist both user message and assistant response
+    // Persist conversation
     const lastUserMessage = messages[messages.length - 1];
     if (lastUserMessage?.role === "user") {
       await supabase.from("chat_messages").insert([
-        {
-          client_id: clientId,
-          role: "user",
-          content: lastUserMessage.content,
-        },
-        {
-          client_id: clientId,
-          role: "assistant",
-          content: assistantMessage,
-        },
+        { client_id: clientId, role: "user",      content: lastUserMessage.content },
+        { client_id: clientId, role: "assistant",  content: assistantMessage },
       ]);
     }
 
-    return NextResponse.json({
-      role: "assistant",
-      content: assistantMessage,
-    });
+    return NextResponse.json({ role: "assistant", content: assistantMessage });
   } catch (error) {
     console.error("[/api/chat]", error);
-    return NextResponse.json(
-      { error: "Error interno del servidor" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 });
   }
 }
