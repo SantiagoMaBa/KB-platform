@@ -1,0 +1,44 @@
+name: Supabase Migrations
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      # Solo corre cuando hay cambios en migraciones o en este workflow
+      - "supabase/migrations/**.sql"
+      - ".github/workflows/migrate.yml"
+
+  # Permite correr manualmente desde la pestaña Actions en GitHub
+  workflow_dispatch:
+
+jobs:
+  migrate:
+    name: Push migrations to Supabase
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Instala el Supabase CLI oficial desde GitHub Releases
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      # Vincula el CLI con el proyecto remoto (no-interactivo con access token)
+      - name: Link Supabase project
+        run: supabase link --project-ref ${{ vars.SUPABASE_PROJECT_REF }}
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      # Aplica todas las migraciones pendientes.
+      # Supabase trackea el historial en supabase_migrations.schema_migrations
+      # → idempotente: solo aplica las migraciones que aún no corrieron.
+      - name: Run pending migrations
+        run: supabase db push
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD:  ${{ secrets.SUPABASE_DB_PASSWORD }}

@@ -156,9 +156,26 @@ npm install
 
 ### 2. Migración en Supabase
 
-Ejecuta los siguientes SQL en el **SQL Editor** de tu proyecto Supabase:
-- `supabase/migrations/001_initial.sql` — tablas principales + bucket
-- `supabase/migrations/002_sync_sources.sql` — tabla sync_sources
+Las migraciones corren automáticamente en CI/CD al hacer push a `main` (ver sección **CI/CD — Migraciones automáticas**).
+
+Para correrlas manualmente desde tu máquina, necesitas dos variables de entorno:
+
+```bash
+export SUPABASE_ACCESS_TOKEN=<tu_token>   # obtenido en supabase.com/dashboard/account/tokens
+export SUPABASE_DB_PASSWORD=<tu_password>  # contraseña del proyecto en Settings → Database
+```
+
+Luego:
+
+```bash
+# Ver qué migraciones se aplicarían (sin ejecutar)
+npm run migrate:dry
+
+# Aplicar migraciones pendientes
+npm run migrate
+```
+
+El CLI trackea las migraciones aplicadas en `supabase_migrations.schema_migrations`, por lo que es **idempotente** — ya no tienes que copiar SQL manualmente en el editor.
 
 ### 3. Poblar KB demo (Plaza Centro Norte)
 
@@ -184,9 +201,85 @@ En `http://localhost:3000/admin` → **Compilar KB con IA**
 git push origin main
 ```
 
-En el dashboard de Vercel → **Settings** → **Environment Variables**, agrega todas las variables de `.env.local` (excepto las `NEXT_PUBLIC_` que ya estarán en el repo si las commiteas sin el `.local`).
+En el dashboard de Vercel → **Settings** → **Environment Variables**, agrega todas las variables de `.env.local`.
 
-> Recuerda: `OPENAI_API_KEY`, `GOOGLE_SERVICE_ACCOUNT_JSON`, `MICROSOFT_*` **nunca** deben tener prefijo `NEXT_PUBLIC_`.
+> `OPENAI_API_KEY`, `GOOGLE_SERVICE_ACCOUNT_JSON`, `MICROSOFT_*` **nunca** deben tener prefijo `NEXT_PUBLIC_`.
+
+---
+
+## CI/CD — Migraciones automáticas
+
+El workflow `.github/workflows/migrate.yml` corre `supabase db push` automáticamente en cada push a `main` que incluya cambios en `supabase/migrations/*.sql`.
+
+### Secrets y variables requeridos en GitHub
+
+Ve a tu repositorio → **Settings** → **Secrets and variables** → **Actions**.
+
+#### Secrets (valores sensibles — nunca visibles tras guardarlos)
+
+| Secret | Valor | Dónde obtenerlo |
+|--------|-------|-----------------|
+| `SUPABASE_ACCESS_TOKEN` | Token personal de API de Supabase | [supabase.com/dashboard/account/tokens](https://supabase.com/dashboard/account/tokens) → **Generate new token** |
+| `SUPABASE_DB_PASSWORD` | Contraseña de la base de datos del proyecto | [supabase.com/dashboard/project/amtypuoaucrgtlfjcvyv/settings/database](https://supabase.com/dashboard/project/amtypuoaucrgtlfjcvyv/settings/database) → **Database password** (la que pusiste al crear el proyecto, o haz reset ahí mismo) |
+
+#### Variables (valores no sensibles — visibles en los logs)
+
+| Variable | Valor |
+|----------|-------|
+| `SUPABASE_PROJECT_REF` | `amtypuoaucrgtlfjcvyv` |
+
+Ve a **Settings** → **Secrets and variables** → **Actions** → pestaña **Variables** → **New repository variable**.
+
+### Cómo agregar los secrets paso a paso
+
+1. Abre tu repositorio en GitHub
+2. Clic en **Settings** (pestaña superior derecha)
+3. En el menú lateral: **Secrets and variables** → **Actions**
+4. Clic en **New repository secret**
+5. Nombre: `SUPABASE_ACCESS_TOKEN` → pega el token → **Add secret**
+6. Repite para `SUPABASE_DB_PASSWORD`
+7. Pestaña **Variables** → **New repository variable**
+8. Nombre: `SUPABASE_PROJECT_REF`, Valor: `amtypuoaucrgtlfjcvyv` → **Add variable**
+
+### Cómo funciona el workflow
+
+```
+push a main (con cambios en supabase/migrations/)
+        │
+        ▼
+GitHub Actions: ubuntu-latest
+        │
+        ├── checkout del repo
+        ├── instala Supabase CLI oficial (supabase/setup-cli@v1)
+        ├── supabase link --project-ref amtypuoaucrgtlfjcvyv
+        │       └── autentica con SUPABASE_ACCESS_TOKEN
+        └── supabase db push
+                ├── conecta con SUPABASE_DB_PASSWORD
+                ├── lee supabase/migrations/*.sql en orden numérico
+                ├── compara con supabase_migrations.schema_migrations
+                └── solo aplica las migraciones nuevas (idempotente)
+```
+
+### Correr el workflow manualmente
+
+1. Ve a la pestaña **Actions** del repositorio
+2. Selecciona **Supabase Migrations**
+3. Clic en **Run workflow** → **Run workflow**
+
+### Agregar una nueva migración
+
+```bash
+# 1. Crea el archivo con numeración secuencial
+touch supabase/migrations/004_nueva_tabla.sql
+
+# 2. Escribe el SQL
+# 3. Commit y push
+git add supabase/migrations/004_nueva_tabla.sql
+git commit -m "feat: add tabla X"
+git push origin main
+
+# El workflow corre automáticamente y aplica solo la migración nueva.
+```
 
 ---
 
