@@ -35,6 +35,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# Supabase CLI temp files
+supabase/.temp/
+
 # PWA
 public/sw.js
 public/workbox-*.js
