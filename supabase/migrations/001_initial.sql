@@ -1,5 +1,5 @@
 -- ============================================================
--- KB Platform — Migración inicial
+-- KB Platform — Migración inicial (idempotente)
 -- ============================================================
 
 -- 1. Tabla: clients
@@ -30,24 +30,34 @@ CREATE TABLE IF NOT EXISTS public.chat_messages (
 );
 
 -- 4. Índices
-CREATE INDEX IF NOT EXISTS documents_client_id_idx ON public.documents(client_id);
+CREATE INDEX IF NOT EXISTS documents_client_id_idx     ON public.documents(client_id);
 CREATE INDEX IF NOT EXISTS chat_messages_client_id_idx ON public.chat_messages(client_id);
 CREATE INDEX IF NOT EXISTS chat_messages_created_at_idx ON public.chat_messages(created_at);
 
--- 5. Row Level Security (permisivo para el MVP — ajustar en producción)
-ALTER TABLE public.clients ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
+-- 5. Row Level Security
+--    ENABLE ROW LEVEL SECURITY es idempotente en PostgreSQL.
+ALTER TABLE public.clients       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.documents     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.chat_messages ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Allow all for anon" ON public.clients FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all for anon" ON public.documents FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all for anon" ON public.chat_messages FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow all for anon" ON public.clients;
+CREATE POLICY "Allow all for anon" ON public.clients
+  FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for anon" ON public.documents;
+CREATE POLICY "Allow all for anon" ON public.documents
+  FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for anon" ON public.chat_messages;
+CREATE POLICY "Allow all for anon" ON public.chat_messages
+  FOR ALL USING (true) WITH CHECK (true);
 
 -- 6. Storage bucket: kb-clients
 INSERT INTO storage.buckets (id, name, public)
 VALUES ('kb-clients', 'kb-clients', false)
 ON CONFLICT (id) DO NOTHING;
 
+DROP POLICY IF EXISTS "Allow all for anon" ON storage.objects;
 CREATE POLICY "Allow all for anon" ON storage.objects
   FOR ALL USING (bucket_id = 'kb-clients') WITH CHECK (bucket_id = 'kb-clients');
 

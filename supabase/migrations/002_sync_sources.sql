@@ -1,5 +1,5 @@
 -- ============================================================
--- KB Platform — Migración 002: Fuentes de sincronización externas
+-- KB Platform — Migración 002: Fuentes de sincronización externas (idempotente)
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS public.sync_sources (
@@ -13,14 +13,13 @@ CREATE TABLE IF NOT EXISTS public.sync_sources (
   last_sync_error TEXT,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-  -- One source of each type per client
   UNIQUE (client_id, source_type)
 );
 
 CREATE INDEX IF NOT EXISTS sync_sources_client_id_idx ON public.sync_sources(client_id);
 
--- RLS (permisivo para MVP — igual que tablas existentes)
 ALTER TABLE public.sync_sources ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Allow all for anon" ON public.sync_sources;
 CREATE POLICY "Allow all for anon" ON public.sync_sources
   FOR ALL USING (true) WITH CHECK (true);
