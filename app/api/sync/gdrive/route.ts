@@ -18,10 +18,13 @@ import {
   listFolderFiles,
   downloadFile,
   downloadGoogleSheet,
+  downloadGoogleDoc,
+  isGoogleSheet,
+  isGoogleDoc,
   getFolderName,
 } from "@/lib/gdrive";
 import { isPdf, pdfToMarkdown } from "@/lib/pdf";
-import { excelToMarkdown, excelFilenameToMd } from "@/lib/excel";
+import { excelToMarkdown, docxToMarkdown, toMdFilename } from "@/lib/excel";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -34,6 +37,9 @@ interface SyncFileResult {
 
 function isExcel(filename: string): boolean {
   return /\.(xlsx|csv)$/i.test(filename);
+}
+function isDocx(filename: string): boolean {
+  return /\.docx$/i.test(filename);
 }
 
 export async function POST(req: NextRequest) {
@@ -91,11 +97,18 @@ export async function POST(req: NextRequest) {
         let mdFilename: string;
         let mdBuffer: Buffer;
 
-        if (file.mimeType === "application/vnd.google-apps.spreadsheet") {
+        if (isGoogleSheet(file.mimeType)) {
           // Google Sheets → export as xlsx → convert to markdown
           const xlsxBuffer = await downloadGoogleSheet(file.id);
           const markdown = excelToMarkdown(xlsxBuffer, file.name + ".xlsx");
-          mdFilename = file.name.endsWith(".md") ? file.name : file.name + ".md";
+          mdFilename = toMdFilename(file.name + ".xlsx");
+          mdBuffer = Buffer.from(markdown, "utf-8");
+
+        } else if (isGoogleDoc(file.mimeType)) {
+          // Google Docs → export as docx → convert to markdown
+          const docxBuffer = await downloadGoogleDoc(file.id);
+          const markdown = await docxToMarkdown(docxBuffer, file.name + ".docx");
+          mdFilename = toMdFilename(file.name + ".docx");
           mdBuffer = Buffer.from(markdown, "utf-8");
 
         } else if (isPdf(file.name)) {
@@ -106,10 +119,15 @@ export async function POST(req: NextRequest) {
           mdBuffer = Buffer.from(content, "utf-8");
 
         } else if (isExcel(file.name)) {
-          // Excel/CSV → convert to markdown
           const rawBuffer = await downloadFile(file.id);
           const markdown = excelToMarkdown(rawBuffer, file.name);
-          mdFilename = excelFilenameToMd(file.name);
+          mdFilename = toMdFilename(file.name);
+          mdBuffer = Buffer.from(markdown, "utf-8");
+
+        } else if (isDocx(file.name)) {
+          const rawBuffer = await downloadFile(file.id);
+          const markdown = await docxToMarkdown(rawBuffer, file.name);
+          mdFilename = toMdFilename(file.name);
           mdBuffer = Buffer.from(markdown, "utf-8");
 
         } else {

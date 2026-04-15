@@ -1,5 +1,5 @@
 /**
- * lib/excel.ts — Convierte archivos Excel (.xlsx) y CSV a Markdown.
+ * lib/excel.ts — Convierte archivos Excel (.xlsx), CSV y Word (.docx) a Markdown.
  *
  * Cada hoja del workbook se convierte en una sección Markdown con tabla.
  * Las filas vacías y columnas vacías al final se eliminan.
@@ -101,9 +101,55 @@ export function excelToMarkdown(buffer: Buffer, filename: string): string {
 }
 
 /**
- * Devuelve el nombre de archivo .md correspondiente a un .xlsx/.csv.
+ * Devuelve el nombre de archivo .md correspondiente a un .xlsx/.csv/.docx.
  * Ejemplo: "inventario.xlsx" → "inventario.md"
  */
-export function excelFilenameToMd(filename: string): string {
-  return filename.replace(/\.(xlsx|csv)$/i, ".md");
+export function toMdFilename(filename: string): string {
+  return filename.replace(/\.(xlsx|csv|docx)$/i, ".md");
+}
+
+/** @deprecated Use toMdFilename */
+export const excelFilenameToMd = toMdFilename;
+
+// ── Word (.docx) ──────────────────────────────────────────────────────────────
+
+/**
+ * Convierte un Buffer de archivo .docx a Markdown.
+ * Usa mammoth para extraer texto con formato básico.
+ */
+export async function docxToMarkdown(buffer: Buffer, filename: string): Promise<string> {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const mammoth = require("mammoth");
+  const baseName = filename.replace(/\.docx$/i, "");
+
+  // Convert to HTML first, then simplify to Markdown-friendly text
+  const { value: html } = await mammoth.convertToHtml({ buffer });
+
+  // Basic HTML → Markdown conversion (headings, bold, lists, paragraphs)
+  const md = html
+    .replace(/<h1[^>]*>(.*?)<\/h1>/gi, "\n# $1\n")
+    .replace(/<h2[^>]*>(.*?)<\/h2>/gi, "\n## $1\n")
+    .replace(/<h3[^>]*>(.*?)<\/h3>/gi, "\n### $1\n")
+    .replace(/<h4[^>]*>(.*?)<\/h4>/gi, "\n#### $1\n")
+    .replace(/<strong[^>]*>(.*?)<\/strong>/gi, "**$1**")
+    .replace(/<b[^>]*>(.*?)<\/b>/gi, "**$1**")
+    .replace(/<em[^>]*>(.*?)<\/em>/gi, "_$1_")
+    .replace(/<li[^>]*>(.*?)<\/li>/gi, "\n- $1")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<p[^>]*>(.*?)<\/p>/gi, "\n$1\n")
+    .replace(/<table[^>]*>/gi, "\n")
+    .replace(/<\/table>/gi, "\n")
+    .replace(/<tr[^>]*>/gi, "")
+    .replace(/<\/tr>/gi, " |\n")
+    .replace(/<t[dh][^>]*>(.*?)<\/t[dh]>/gi, "| $1 ")
+    .replace(/<[^>]+>/g, "") // strip remaining tags
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/\n{3,}/g, "\n\n") // collapse excess blank lines
+    .trim();
+
+  return `# ${baseName}\n\n${md}\n`;
 }

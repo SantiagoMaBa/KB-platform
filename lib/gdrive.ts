@@ -18,13 +18,17 @@ const ACCEPTED_MIMES = new Set([
   "text/markdown",
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", // .xlsx
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // .docx
   "text/csv",
   "application/vnd.google-apps.spreadsheet", // Google Sheets
+  "application/vnd.google-apps.document",    // Google Docs
 ]);
-const ACCEPTED_EXTS = new Set([".md", ".txt", ".pdf", ".xlsx", ".csv"]);
+const ACCEPTED_EXTS = new Set([".md", ".txt", ".pdf", ".xlsx", ".csv", ".docx"]);
 
 const GOOGLE_SHEET_MIME = "application/vnd.google-apps.spreadsheet";
+const GOOGLE_DOC_MIME   = "application/vnd.google-apps.document";
 const XLSX_EXPORT_MIME  = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+const DOCX_EXPORT_MIME  = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -239,4 +243,38 @@ export async function downloadGoogleSheet(fileId: string): Promise<Buffer> {
 /** Returns true if the file is a Google Sheet (needs export, not direct download). */
 export function isGoogleSheet(mimeType: string): boolean {
   return mimeType === GOOGLE_SHEET_MIME;
+}
+
+/** Returns true if the file is a Google Doc (needs export as .docx). */
+export function isGoogleDoc(mimeType: string): boolean {
+  return mimeType === GOOGLE_DOC_MIME;
+}
+
+/**
+ * Exports a Google Doc as .docx buffer.
+ */
+export async function downloadGoogleDoc(fileId: string): Promise<Buffer> {
+  const apiKey = getApiKey();
+
+  if (apiKey) {
+    const params = new URLSearchParams({ mimeType: DOCX_EXPORT_MIME, key: apiKey });
+    const res = await fetch(`${DRIVE_BASE}/files/${fileId}/export?${params}`);
+    if (!res.ok) throw new Error(`Export Google Doc fallido: ${res.status}`);
+    return Buffer.from(await res.arrayBuffer());
+  }
+
+  const sa = getServiceAccountCredentials();
+  if (sa) {
+    const { google } = await import("googleapis");
+    const auth = await getServiceAccountAuth();
+    const drive = google.drive({ version: "v3", auth });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const res = await (drive.files.export as any)(
+      { fileId, mimeType: DOCX_EXPORT_MIME },
+      { responseType: "arraybuffer" }
+    );
+    return Buffer.from(res.data as ArrayBuffer);
+  }
+
+  throw new Error("No hay credenciales de Google Drive configuradas.");
 }

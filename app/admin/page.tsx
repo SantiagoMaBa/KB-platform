@@ -564,7 +564,7 @@ export default function AdminPage() {
 
   // ── Staging ──────────────────────────────────────────────────────────────────
 
-  const ACCEPTED = [".md", ".txt", ".xlsx", ".csv"];
+  const ACCEPTED = [".md", ".txt", ".pdf", ".xlsx", ".csv", ".docx"];
   const isAccepted = (name: string) => ACCEPTED.some((ext) => name.toLowerCase().endsWith(ext));
 
   const addFiles = (fileList: FileList | null) => {
@@ -761,11 +761,13 @@ export default function AdminPage() {
                 Subir documentos
               </h2>
               <p className="text-xs text-slate-500 mt-1">
-                <code className="bg-slate-100 px-1 rounded">.md</code>{" "}
-                <code className="bg-slate-100 px-1 rounded">.txt</code>{" "}
+                <code className="bg-slate-100 px-1 rounded">.pdf</code>{" "}
+                <code className="bg-slate-100 px-1 rounded">.docx</code>{" "}
                 <code className="bg-slate-100 px-1 rounded">.xlsx</code>{" "}
-                <code className="bg-slate-100 px-1 rounded">.csv</code>.
-                Excel y CSV se convierten a Markdown automáticamente.
+                <code className="bg-slate-100 px-1 rounded">.csv</code>{" "}
+                <code className="bg-slate-100 px-1 rounded">.md</code>{" "}
+                <code className="bg-slate-100 px-1 rounded">.txt</code>.
+                PDF, Word y Excel se convierten automáticamente.
               </p>
             </div>
 
@@ -783,7 +785,7 @@ export default function AdminPage() {
               <input
                 type="file"
                 multiple
-                accept=".md,.txt,.xlsx,.csv"
+                accept=".md,.txt,.pdf,.xlsx,.csv,.docx"
                 className="sr-only"
                 onChange={(e) => addFiles(e.target.files)}
               />
@@ -792,7 +794,7 @@ export default function AdminPage() {
               </div>
               <div className="text-center">
                 <p className="text-sm text-slate-700 font-medium">Arrastra o selecciona archivos</p>
-                <p className="text-xs text-slate-400 mt-0.5">.md · .txt · .xlsx · .csv</p>
+                <p className="text-xs text-slate-400 mt-0.5">.pdf · .docx · .xlsx · .csv · .md · .txt</p>
               </div>
             </label>
 

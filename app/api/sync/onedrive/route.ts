@@ -19,7 +19,7 @@ import {
   getSharedFolderName,
 } from "@/lib/onedrive";
 import { isPdf, pdfToMarkdown } from "@/lib/pdf";
-import { excelToMarkdown, excelFilenameToMd } from "@/lib/excel";
+import { excelToMarkdown, docxToMarkdown, toMdFilename } from "@/lib/excel";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -32,6 +32,9 @@ interface SyncFileResult {
 
 function isExcel(filename: string): boolean {
   return /\.(xlsx|csv)$/i.test(filename);
+}
+function isDocx(filename: string): boolean {
+  return /\.docx$/i.test(filename);
 }
 
 export async function POST(req: NextRequest) {
@@ -91,7 +94,12 @@ export async function POST(req: NextRequest) {
 
         } else if (isExcel(file.name)) {
           const markdown = excelToMarkdown(buffer, file.name);
-          mdFilename = excelFilenameToMd(file.name);
+          mdFilename = toMdFilename(file.name);
+          mdBuffer = Buffer.from(markdown, "utf-8");
+
+        } else if (isDocx(file.name)) {
+          const markdown = await docxToMarkdown(buffer, file.name);
+          mdFilename = toMdFilename(file.name);
           mdBuffer = Buffer.from(markdown, "utf-8");
 
         } else {

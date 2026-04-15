@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { rawPath, generateAndUploadIndex } from "@/lib/kb";
-import { excelToMarkdown, excelFilenameToMd } from "@/lib/excel";
+import { excelToMarkdown, docxToMarkdown, toMdFilename } from "@/lib/excel";
+import { isPdf, pdfToMarkdown } from "@/lib/pdf";
 
 export const runtime = "nodejs";
 
-const ACCEPTED_EXTS = [".md", ".txt", ".xlsx", ".csv"];
+const ACCEPTED_EXTS = [".md", ".txt", ".pdf", ".xlsx", ".csv", ".docx"];
 
-function isExcel(filename: string): boolean {
-  return filename.endsWith(".xlsx") || filename.endsWith(".csv");
+function getExt(filename: string): string {
+  return "." + filename.split(".").pop()!.toLowerCase();
 }
 
 export async function POST(req: NextRequest) {
@@ -30,7 +31,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const ext = "." + file.name.split(".").pop()?.toLowerCase();
+    const ext = getExt(file.name);
     if (!ACCEPTED_EXTS.includes(ext)) {
       return NextResponse.json(
         { error: `Formato no soportado. Acepta: ${ACCEPTED_EXTS.join(", ")}` },
@@ -39,40 +40,55 @@ export async function POST(req: NextRequest) {
     }
 
     const arrayBuffer = await file.arrayBuffer();
-    let storedFilename: string;
-    let contentBlob: Blob;
+    const buffer = Buffer.from(arrayBuffer);
 
-    if (isExcel(file.name)) {
-      // Convert Excel/CSV → Markdown before storing
-      const markdown = excelToMarkdown(Buffer.from(arrayBuffer), file.name);
-      storedFilename = excelFilenameToMd(file.name);
-      contentBlob = new Blob([markdown], { type: "text/markdown" });
+    // ── Convert to Markdown ────────────────────────────────────────────────────
+    let storedFilename: string;
+    let content: string | Buffer;
+
+    if (isPdf(file.name)) {
+      const { content: md, mdFilename } = await pdfToMarkdown(file.name, buffer);
+      storedFilename = mdFilename;
+      content = md;
+
+    } else if (ext === ".xlsx" || ext === ".csv") {
+      content = excelToMarkdown(buffer, file.name);
+      storedFilename = toMdFilename(file.name);
+
+    } else if (ext === ".docx") {
+      content = await docxToMarkdown(buffer, file.name);
+      storedFilename = toMdFilename(file.name);
+
     } else {
+      // .md / .txt — store as-is
       storedFilename = file.name;
-      contentBlob = new Blob([arrayBuffer], { type: "text/markdown" });
+      content = buffer;
     }
 
+    // ── Upload to Supabase Storage ─────────────────────────────────────────────
     const storagePath = rawPath(clientId, storedFilename);
+    const blobContent = typeof content === "string" ? content : content.toString("utf-8");
+    const blob = new Blob([blobContent], { type: "text/markdown" });
 
     const { error: uploadError } = await supabase.storage
       .from("kb-clients")
-      .upload(storagePath, contentBlob, { upsert: true });
+      .upload(storagePath, blob, { upsert: true });
 
     if (uploadError) {
       return NextResponse.json({ error: uploadError.message }, { status: 500 });
     }
 
-    // Upsert document record with metadata
+    // ── Register in documents table ────────────────────────────────────────────
     await supabase.from("documents").upsert(
       {
         client_id:    clientId,
         filename:     storedFilename,
         storage_path: storagePath,
         compiled:     false,
-        display_name: displayName?.trim()  || null,
-        description:  description?.trim()  || null,
-        category:     category             || null,
-        tags:         tags?.trim()         || null,
+        display_name: displayName?.trim() || null,
+        description:  description?.trim() || null,
+        category:     category            || null,
+        tags:         tags?.trim()        || null,
       },
       { onConflict: "client_id,filename" }
     );
@@ -82,12 +98,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       path: storagePath,
-      converted: isExcel(file.name) ? storedFilename : undefined,
+      ...(storedFilename !== file.name ? { converted: storedFilename } : {}),
     });
+
   } catch (error) {
     console.error("[/api/upload]", error);
     return NextResponse.json(
-      { error: "Error interno del servidor" },
+      { error: error instanceof Error ? error.message : "Error interno del servidor" },
       { status: 500 }
     );
   }
