@@ -739,14 +739,25 @@ export default function AdminPage() {
               : "bg-amber-50 border-amber-200 text-amber-800"
           }`}>
             <CheckCircle className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
-            <div>
+            <div className="flex-1">
               <p className="font-semibold">
                 {uploadResults.filter((r) => r.ok).length} de {uploadResults.length} archivos subidos
+              </p>
+              <p className="text-xs mt-1 opacity-80">
+                Ahora haz click en <strong>Compilar KB con IA</strong> para que el chat pueda leer estos documentos.
               </p>
               {uploadResults.filter((r) => !r.ok).map((r) => (
                 <p key={r.name} className="text-xs opacity-80">❌ {r.name}</p>
               ))}
             </div>
+            <button
+              onClick={handleCompile}
+              disabled={compiling}
+              className="btn-primary text-xs shrink-0"
+            >
+              {compiling ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
+              {compiling ? "Compilando…" : "Compilar ahora"}
+            </button>
           </div>
         )}
 
