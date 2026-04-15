@@ -120,7 +120,7 @@ const SOURCE_META = {
     bg: "bg-blue-50",
     border: "border-blue-200",
     placeholder: "https://drive.google.com/drive/folders/…",
-    hint: "Comparte la carpeta con el email del service account antes de sincronizar.",
+    hint: "La carpeta debe ser pública (\"Cualquiera con el link puede ver\"). Requiere GOOGLE_API_KEY en variables de entorno.",
   },
   onedrive: {
     label: "OneDrive",
@@ -129,7 +129,7 @@ const SOURCE_META = {
     bg: "bg-sky-50",
     border: "border-sky-200",
     placeholder: "https://onedrive.live.com/… o https://1drv.ms/…",
-    hint: "Asegúrate de que el link sea público o tenga acceso de lectura configurado.",
+    hint: "La carpeta debe ser pública (\"Cualquiera con el link puede ver\"). No requiere credenciales de Azure.",
   },
 } as const;
 
@@ -1016,14 +1016,24 @@ export default function AdminPage() {
             )}
           </div>
 
-          <div className="mt-4 flex items-start gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
-            <CloudOff className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
-            <p className="text-xs text-slate-500 leading-relaxed">
-              <strong className="text-slate-700">Credenciales requeridas:</strong>{" "}
-              <code className="bg-slate-200 px-1 rounded">GOOGLE_SERVICE_ACCOUNT_JSON</code> y/o{" "}
-              <code className="bg-slate-200 px-1 rounded">MICROSOFT_CLIENT_ID/SECRET/TENANT_ID</code>{" "}
-              en las variables de entorno del servidor. Ver <strong className="text-slate-700">README.md</strong>.
-            </p>
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="flex items-start gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
+              <span className="text-blue-600 font-bold text-xs mt-0.5 shrink-0">G</span>
+              <p className="text-xs text-blue-800 leading-relaxed">
+                <strong>Google Drive:</strong> agrega{" "}
+                <code className="bg-blue-100 px-1 rounded">GOOGLE_API_KEY</code>{" "}
+                en variables de entorno. La carpeta debe ser pública.{" "}
+                <span className="opacity-70">Obtén la key gratis en Google Cloud Console → APIs & Services → Credentials.</span>
+              </p>
+            </div>
+            <div className="flex items-start gap-3 bg-sky-50 border border-sky-200 rounded-xl px-4 py-3">
+              <span className="text-sky-600 font-bold text-xs mt-0.5 shrink-0">O</span>
+              <p className="text-xs text-sky-800 leading-relaxed">
+                <strong>OneDrive:</strong> no requiere credenciales de Azure.{" "}
+                Solo asegúrate de que la carpeta compartida sea pública{" "}
+                <span className="opacity-70">("Cualquiera con el link puede ver").</span>
+              </p>
+            </div>
           </div>
         </div>
 

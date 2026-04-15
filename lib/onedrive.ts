@@ -1,8 +1,12 @@
 /**
  * lib/onedrive.ts — Microsoft OneDrive / Graph API utilities (server-side only).
  *
- * Autenticación: client credentials flow (app-only).
- * La Azure App necesita permiso Files.Read.All (Application) en Microsoft Graph.
+ * Modos de acceso (en orden de preferencia):
+ *   1. Anónimo: para carpetas compartidas como "Cualquiera con el link puede ver".
+ *      No requiere credenciales de Azure. Microsoft Graph respeta el acceso
+ *      anónimo en links públicos de OneDrive Personal y SharePoint.
+ *   2. App-only (client credentials): para carpetas que requieren autenticación.
+ *      Requiere MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, MICROSOFT_TENANT_ID.
  *
  * NUNCA importar este módulo desde código del cliente.
  */
@@ -11,13 +15,45 @@ const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 
 const ACCEPTED_EXTS = new Set([".md", ".txt", ".pdf"]);
 
-// ── Auth ──────────────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-function requireEnv(name: string): string {
-  const v = process.env[name];
-  if (!v) throw new Error(`${name} no está configurado en las variables de entorno.`);
-  return v;
+/**
+ * Encodes a OneDrive sharing URL for use with the /shares endpoint.
+ * Microsoft spec: base64url("u!" + url) — no padding, + → -, / → _
+ */
+export function encodeShareUrl(url: string): string {
+  return Buffer.from("u!" + url)
+    .toString("base64")
+    .replace(/=/g, "")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_");
 }
+
+function hasAzureCredentials(): boolean {
+  return !!(
+    process.env.MICROSOFT_CLIENT_ID &&
+    process.env.MICROSOFT_CLIENT_SECRET &&
+    process.env.MICROSOFT_TENANT_ID
+  );
+}
+
+// ── Anonymous Graph API (public links) ───────────────────────────────────────
+
+async function anonymousGraphGet<T>(path: string): Promise<T> {
+  const res = await fetch(`${GRAPH_BASE}${path}`);
+  if (!res.ok) {
+    const body = await res.text();
+    if (res.status === 401 || res.status === 403) {
+      throw new Error(
+        "El link de OneDrive requiere autenticación. Asegúrate de que la carpeta sea pública ('Cualquiera con el link puede ver') o configura las credenciales de Azure en las variables de entorno."
+      );
+    }
+    throw new Error(`Graph API ${path}: ${res.status} — ${body}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+// ── Authenticated Graph API (Azure app credentials) ───────────────────────────
 
 interface TokenResponse {
   access_token: string;
@@ -27,15 +63,14 @@ interface TokenResponse {
 // Simple in-process token cache
 let cachedToken: { token: string; expiresAt: number } | null = null;
 
-export async function getAccessToken(): Promise<string> {
-  // Return cached token if still valid (with 60s margin)
+async function getAccessToken(): Promise<string> {
   if (cachedToken && Date.now() < cachedToken.expiresAt - 60_000) {
     return cachedToken.token;
   }
 
-  const tenantId = requireEnv("MICROSOFT_TENANT_ID");
-  const clientId = requireEnv("MICROSOFT_CLIENT_ID");
-  const clientSecret = requireEnv("MICROSOFT_CLIENT_SECRET");
+  const tenantId = process.env.MICROSOFT_TENANT_ID!;
+  const clientId = process.env.MICROSOFT_CLIENT_ID!;
+  const clientSecret = process.env.MICROSOFT_CLIENT_SECRET!;
 
   const res = await fetch(
     `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
@@ -57,32 +92,14 @@ export async function getAccessToken(): Promise<string> {
   }
 
   const data = (await res.json()) as TokenResponse;
-
   cachedToken = {
     token: data.access_token,
     expiresAt: Date.now() + data.expires_in * 1000,
   };
-
-  return data.access_token;
+  return cachedToken.token;
 }
 
-// ── Shared link encoding ──────────────────────────────────────────────────────
-
-/**
- * Encodes a OneDrive sharing URL for use with the /shares endpoint.
- * Microsoft spec: base64url("u!" + url) — no padding, + → -, / → _
- */
-export function encodeShareUrl(url: string): string {
-  return Buffer.from("u!" + url)
-    .toString("base64")
-    .replace(/=/g, "")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_");
-}
-
-// ── Graph API helpers ─────────────────────────────────────────────────────────
-
-async function graphGet<T>(path: string): Promise<T> {
+async function authenticatedGraphGet<T>(path: string): Promise<T> {
   const token = await getAccessToken();
   const res = await fetch(`${GRAPH_BASE}${path}`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -92,6 +109,15 @@ async function graphGet<T>(path: string): Promise<T> {
     throw new Error(`Graph API ${path}: ${res.status} — ${body}`);
   }
   return res.json() as Promise<T>;
+}
+
+// ── Selects anonymous or authenticated based on available credentials ─────────
+
+async function graphGet<T>(path: string): Promise<T> {
+  if (hasAzureCredentials()) {
+    return authenticatedGraphGet<T>(path);
+  }
+  return anonymousGraphGet<T>(path);
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -123,11 +149,9 @@ export async function listSharedFolderFiles(
   const encoded = encodeShareUrl(sharedLink);
 
   // Resolve the shared link to a driveItem
-  const item = await graphGet<DriveItemResponse>(
-    `/shares/${encoded}/driveItem`
-  );
+  await graphGet<DriveItemResponse>(`/shares/${encoded}/driveItem`);
 
-  // Get children (one level, no pagination for MVP)
+  // Get children
   const children = await graphGet<ChildrenResponse>(
     `/shares/${encoded}/driveItem/children?$select=id,name,size,lastModifiedDateTime,file,folder,@microsoft.graph.downloadUrl&$top=200`
   );
@@ -158,6 +182,8 @@ export async function downloadOneDriveFile(file: OneDriveFile): Promise<Buffer> 
   const downloadUrl = file["@microsoft.graph.downloadUrl"];
   if (!downloadUrl) throw new Error(`No download URL for ${file.name}`);
 
+  // @microsoft.graph.downloadUrl is always a pre-authenticated URL —
+  // no Authorization header needed regardless of auth mode.
   const res = await fetch(downloadUrl);
   if (!res.ok) throw new Error(`Download failed: ${res.status}`);
 
