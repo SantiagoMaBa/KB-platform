@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { rawPath, generateAndUploadIndex } from "@/lib/kb";
+import { excelToMarkdown, excelFilenameToMd } from "@/lib/excel";
 
 export const runtime = "nodejs";
+
+const ACCEPTED_EXTS = [".md", ".txt", ".xlsx", ".csv"];
+
+function isExcel(filename: string): boolean {
+  return filename.endsWith(".xlsx") || filename.endsWith(".csv");
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -23,20 +30,33 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!file.name.endsWith(".md") && !file.name.endsWith(".txt")) {
+    const ext = "." + file.name.split(".").pop()?.toLowerCase();
+    if (!ACCEPTED_EXTS.includes(ext)) {
       return NextResponse.json(
-        { error: "Solo se aceptan archivos .md o .txt" },
+        { error: `Formato no soportado. Acepta: ${ACCEPTED_EXTS.join(", ")}` },
         { status: 400 }
       );
     }
 
-    const storagePath = rawPath(clientId, file.name);
     const arrayBuffer = await file.arrayBuffer();
-    const blob = new Blob([arrayBuffer], { type: "text/markdown" });
+    let storedFilename: string;
+    let contentBlob: Blob;
+
+    if (isExcel(file.name)) {
+      // Convert Excel/CSV → Markdown before storing
+      const markdown = excelToMarkdown(Buffer.from(arrayBuffer), file.name);
+      storedFilename = excelFilenameToMd(file.name);
+      contentBlob = new Blob([markdown], { type: "text/markdown" });
+    } else {
+      storedFilename = file.name;
+      contentBlob = new Blob([arrayBuffer], { type: "text/markdown" });
+    }
+
+    const storagePath = rawPath(clientId, storedFilename);
 
     const { error: uploadError } = await supabase.storage
       .from("kb-clients")
-      .upload(storagePath, blob, { upsert: true });
+      .upload(storagePath, contentBlob, { upsert: true });
 
     if (uploadError) {
       return NextResponse.json({ error: uploadError.message }, { status: 500 });
@@ -46,7 +66,7 @@ export async function POST(req: NextRequest) {
     await supabase.from("documents").upsert(
       {
         client_id:    clientId,
-        filename:     file.name,
+        filename:     storedFilename,
         storage_path: storagePath,
         compiled:     false,
         display_name: displayName?.trim()  || null,
@@ -57,10 +77,13 @@ export async function POST(req: NextRequest) {
       { onConflict: "client_id,filename" }
     );
 
-    // Regenerate index.md with updated metadata
     await generateAndUploadIndex(clientId, clientName ?? clientId);
 
-    return NextResponse.json({ success: true, path: storagePath });
+    return NextResponse.json({
+      success: true,
+      path: storagePath,
+      converted: isExcel(file.name) ? storedFilename : undefined,
+    });
   } catch (error) {
     console.error("[/api/upload]", error);
     return NextResponse.json(

@@ -13,7 +13,7 @@
 
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 
-const ACCEPTED_EXTS = new Set([".md", ".txt", ".pdf"]);
+const ACCEPTED_EXTS = new Set([".md", ".txt", ".pdf", ".xlsx", ".csv"]);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

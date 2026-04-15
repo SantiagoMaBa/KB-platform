@@ -17,8 +17,14 @@ const ACCEPTED_MIMES = new Set([
   "text/plain",
   "text/markdown",
   "application/pdf",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", // .xlsx
+  "text/csv",
+  "application/vnd.google-apps.spreadsheet", // Google Sheets
 ]);
-const ACCEPTED_EXTS = new Set([".md", ".txt", ".pdf"]);
+const ACCEPTED_EXTS = new Set([".md", ".txt", ".pdf", ".xlsx", ".csv"]);
+
+const GOOGLE_SHEET_MIME = "application/vnd.google-apps.spreadsheet";
+const XLSX_EXPORT_MIME  = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -198,4 +204,39 @@ export async function getFolderName(folderId: string): Promise<string> {
   if (sa) return getFolderNameServiceAccount(folderId);
 
   return folderId;
+}
+
+/**
+ * Exports a Google Sheet as .xlsx buffer.
+ * Google Sheets cannot be downloaded directly — must be exported.
+ */
+export async function downloadGoogleSheet(fileId: string): Promise<Buffer> {
+  const apiKey = getApiKey();
+
+  if (apiKey) {
+    const params = new URLSearchParams({ mimeType: XLSX_EXPORT_MIME, key: apiKey });
+    const res = await fetch(`${DRIVE_BASE}/files/${fileId}/export?${params}`);
+    if (!res.ok) throw new Error(`Export Google Sheet fallido: ${res.status}`);
+    return Buffer.from(await res.arrayBuffer());
+  }
+
+  const sa = getServiceAccountCredentials();
+  if (sa) {
+    const { google } = await import("googleapis");
+    const auth = await getServiceAccountAuth();
+    const drive = google.drive({ version: "v3", auth });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const res = await (drive.files.export as any)(
+      { fileId, mimeType: XLSX_EXPORT_MIME },
+      { responseType: "arraybuffer" }
+    );
+    return Buffer.from(res.data as ArrayBuffer);
+  }
+
+  throw new Error("No hay credenciales de Google Drive configuradas.");
+}
+
+/** Returns true if the file is a Google Sheet (needs export, not direct download). */
+export function isGoogleSheet(mimeType: string): boolean {
+  return mimeType === GOOGLE_SHEET_MIME;
 }
