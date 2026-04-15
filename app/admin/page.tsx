@@ -77,6 +77,7 @@ interface SyncSource {
   id: string;
   source_type: "gdrive" | "onedrive";
   shared_link: string;
+  description: string | null;
   folder_name: string | null;
   last_sync_at: string | null;
   last_sync_count: number;
@@ -254,152 +255,267 @@ function StagedFileRow({
   );
 }
 
-// ── Sync source card ──────────────────────────────────────────────────────────
+// ── Registered sync source row ────────────────────────────────────────────────
 
-function SyncSourceCard({
-  type,
+function SyncSourceRow({
   source,
-  onSave,
-  onSync,
-  onDelete,
   syncing,
+  onSync,
+  onUpdate,
+  onDelete,
 }: {
-  type: "gdrive" | "onedrive";
-  source: SyncSource | null;
-  onSave: (link: string) => Promise<void>;
-  onSync: () => Promise<SyncResult | null>;
-  onDelete: () => Promise<void>;
+  source: SyncSource;
   syncing: boolean;
+  onSync: () => Promise<SyncResult | null>;
+  onUpdate: (patch: { sharedLink?: string; description?: string }) => Promise<void>;
+  onDelete: () => Promise<void>;
 }) {
-  const meta = SOURCE_META[type];
-  const [link, setLink] = useState(source?.shared_link ?? "");
+  const meta = SOURCE_META[source.source_type];
+  const [editing, setEditing] = useState(false);
+  const [editLink, setEditLink] = useState(source.shared_link);
+  const [editDesc, setEditDesc] = useState(source.description ?? "");
   const [saving, setSaving] = useState(false);
-  const [lastResult, setLastResult] = useState<SyncResult | null>(null);
   const [deleting, setDeleting] = useState(false);
-
-  const isLoading = syncing || saving;
-
-  const handleSaveAndSync = async () => {
-    if (!link.trim()) return;
-    setSaving(true);
-    await onSave(link.trim());
-    setSaving(false);
-    const result = await onSync();
-    if (result) setLastResult(result);
-  };
+  const [lastResult, setLastResult] = useState<SyncResult | null>(null);
 
   const handleSync = async () => {
     const result = await onSync();
     if (result) setLastResult(result);
   };
 
+  const handleSave = async () => {
+    setSaving(true);
+    await onUpdate({ sharedLink: editLink.trim(), description: editDesc.trim() });
+    setSaving(false);
+    setEditing(false);
+  };
+
   const handleDelete = async () => {
     setDeleting(true);
     await onDelete();
-    setLink("");
-    setLastResult(null);
-    setDeleting(false);
   };
 
-  const isConfigured = !!source;
-  const linkChanged = source?.shared_link !== link;
-
   return (
-    <div className={`card space-y-4 border-l-4 ${meta.border}`}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className={`w-9 h-9 rounded-lg ${meta.bg} border ${meta.border} flex items-center justify-center shrink-0`}>
-            <span className={`font-display font-bold text-sm ${meta.color}`}>{meta.icon}</span>
-          </div>
-          <div>
-            <p className="font-display font-semibold text-slate-900 text-sm">{meta.label}</p>
-            {isConfigured && source.folder_name && (
-              <p className="text-xs text-slate-400 mt-0.5 truncate max-w-[200px]">
-                📁 {source.folder_name}
-              </p>
+    <div className={`border rounded-xl overflow-hidden bg-white border-l-4 ${meta.border}`}>
+      {/* Header */}
+      <div className="flex items-start gap-3 px-4 py-3">
+        <div className={`w-8 h-8 rounded-lg ${meta.bg} border ${meta.border} flex items-center justify-center shrink-0 mt-0.5`}>
+          <span className={`font-display font-bold text-xs ${meta.color}`}>{meta.icon}</span>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-slate-700">{meta.label}</span>
+            {source.folder_name && (
+              <span className="text-xs text-slate-400 truncate">📁 {source.folder_name}</span>
             )}
           </div>
+          {!editing && (
+            <>
+              <p className="text-[11px] text-slate-400 mt-0.5 truncate">{source.shared_link}</p>
+              {source.description && (
+                <p className="text-xs text-slate-600 mt-1 leading-snug">{source.description}</p>
+              )}
+            </>
+          )}
         </div>
-        {isConfigured && <span className="badge-green shrink-0">Configurado</span>}
-      </div>
-
-      <div className="space-y-1.5">
-        <label className="text-xs font-medium text-slate-600">Link de carpeta compartida</label>
-        <div className="relative">
-          <Link className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-          <input
-            type="url"
-            value={link}
-            onChange={(e) => setLink(e.target.value)}
-            placeholder={meta.placeholder}
-            className="input pl-8 text-xs"
-            disabled={isLoading}
-          />
-        </div>
-        <p className="text-[11px] text-slate-400 flex items-start gap-1.5">
-          <AlertCircle className="w-3 h-3 shrink-0 mt-0.5 text-amber-500" />
-          {meta.hint}
-        </p>
-      </div>
-
-      <div className="flex items-center gap-2">
-        {!isConfigured || linkChanged ? (
-          <button onClick={handleSaveAndSync} disabled={!link.trim() || isLoading} className="btn-primary text-xs">
-            {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FolderSync className="w-3.5 h-3.5" />}
-            {isLoading ? "Sincronizando…" : "Guardar y sincronizar"}
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            onClick={() => { setEditing(!editing); setEditLink(source.shared_link); setEditDesc(source.description ?? ""); }}
+            className="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+            title="Editar"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+            </svg>
           </button>
-        ) : (
-          <button onClick={handleSync} disabled={isLoading} className="btn-primary text-xs">
-            {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-            {isLoading ? "Sincronizando…" : "Sincronizar ahora"}
+          <button
+            onClick={handleSync}
+            disabled={syncing}
+            className="p-1.5 rounded hover:bg-sky-50 text-slate-400 hover:text-sky-600 transition-colors disabled:opacity-50"
+            title="Sincronizar"
+          >
+            {syncing
+              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              : <RefreshCw className="w-3.5 h-3.5" />}
           </button>
-        )}
-        {isConfigured && (
-          <button onClick={handleDelete} disabled={deleting} className="btn-ghost text-xs text-red-500 hover:text-red-700 hover:bg-red-50">
+          <button
+            onClick={handleDelete}
+            disabled={deleting}
+            className="p-1.5 rounded hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors disabled:opacity-50"
+            title="Eliminar"
+          >
             {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-            Eliminar
           </button>
-        )}
+        </div>
       </div>
 
-      {isConfigured && (
-        <div className="pt-3 border-t border-slate-100 space-y-1.5">
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-slate-500 flex items-center gap-1.5">
-              <Clock className="w-3 h-3" />
-              Última sincronización
-            </span>
-            <span className="text-slate-600 font-medium">{formatDate(source.last_sync_at)}</span>
+      {/* Edit form */}
+      {editing && (
+        <div className="px-4 pb-4 pt-1 border-t border-slate-100 space-y-2.5">
+          <div>
+            <label className="text-[11px] font-medium text-slate-500 mb-1 block">Link de carpeta</label>
+            <div className="relative">
+              <Link className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400" />
+              <input
+                type="url"
+                value={editLink}
+                onChange={(e) => setEditLink(e.target.value)}
+                className="input pl-7 text-xs"
+                placeholder={meta.placeholder}
+              />
+            </div>
           </div>
-          {source.last_sync_at && (
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-500">Archivos sincronizados</span>
-              <span className="badge-blue">{source.last_sync_count} archivos</span>
-            </div>
-          )}
-          {source.last_sync_error && (
-            <div className="flex items-start gap-1.5 text-[11px] text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1.5">
-              <AlertCircle className="w-3 h-3 shrink-0 mt-0.5" />
-              {source.last_sync_error}
-            </div>
-          )}
+          <div>
+            <label className="text-[11px] font-medium text-slate-500 mb-1 block">Descripción</label>
+            <textarea
+              value={editDesc}
+              onChange={(e) => setEditDesc(e.target.value)}
+              rows={2}
+              className="input text-xs resize-none"
+              placeholder="ej: Contratos vigentes de locatarios, renovaciones 2025"
+            />
+          </div>
+          <div className="flex gap-2">
+            <button onClick={handleSave} disabled={saving || !editLink.trim()} className="btn-primary text-xs">
+              {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle className="w-3 h-3" />}
+              Guardar
+            </button>
+            <button onClick={() => setEditing(false)} className="btn-ghost text-xs">
+              Cancelar
+            </button>
+          </div>
         </div>
       )}
 
+      {/* Stats */}
+      <div className="px-4 pb-3 flex items-center gap-4 text-[11px] text-slate-400">
+        <span className="flex items-center gap-1">
+          <Clock className="w-3 h-3" />
+          {formatDate(source.last_sync_at)}
+        </span>
+        {source.last_sync_at && (
+          <span className="badge-blue text-[10px]">{source.last_sync_count} archivos</span>
+        )}
+        {source.last_sync_error && (
+          <span className="text-red-500 flex items-center gap-1">
+            <AlertCircle className="w-3 h-3" />
+            {source.last_sync_error}
+          </span>
+        )}
+      </div>
+
+      {/* Sync result */}
       {lastResult && (
-        <div className={`rounded-lg px-3 py-2.5 text-xs space-y-1 border ${
+        <div className={`mx-4 mb-3 rounded-lg px-3 py-2 text-xs border ${
           lastResult.synced === lastResult.total
             ? "bg-emerald-50 border-emerald-200 text-emerald-800"
             : "bg-amber-50 border-amber-200 text-amber-800"
         }`}>
           <p className="font-semibold">
-            {lastResult.message ?? `${lastResult.synced} de ${lastResult.total} archivos sincronizados`}
+            {lastResult.message ?? `${lastResult.synced} / ${lastResult.total} archivos sincronizados`}
           </p>
-          {lastResult.results.filter((r) => r.status === "error").map((r) => (
-            <p key={r.filename} className="opacity-75">❌ {r.filename}: {r.error}</p>
+          {lastResult.results?.filter((r) => r.status === "error").map((r) => (
+            <p key={r.filename} className="opacity-75 mt-0.5">❌ {r.filename}: {r.error}</p>
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Add source form ────────────────────────────────────────────────────────────
+
+function AddSourceForm({
+  onAdd,
+  onCancel,
+}: {
+  onAdd: (type: "gdrive" | "onedrive", link: string, description: string) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [type, setType] = useState<"gdrive" | "onedrive">("onedrive");
+  const [link, setLink] = useState("");
+  const [description, setDescription] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const meta = SOURCE_META[type];
+
+  const handleAdd = async () => {
+    if (!link.trim()) return;
+    setSaving(true);
+    await onAdd(type, link.trim(), description.trim());
+    setSaving(false);
+  };
+
+  return (
+    <div className="border border-brand-200 rounded-xl bg-brand-50/30 p-4 space-y-3">
+      <p className="text-xs font-semibold text-slate-700">Nueva fuente externa</p>
+
+      {/* Type selector */}
+      <div className="flex gap-2">
+        {(["onedrive", "gdrive"] as const).map((t) => {
+          const m = SOURCE_META[t];
+          return (
+            <button
+              key={t}
+              onClick={() => setType(t)}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition-all ${
+                type === t
+                  ? `${m.bg} ${m.border} ${m.color}`
+                  : "bg-white border-slate-200 text-slate-500 hover:border-slate-300"
+              }`}
+            >
+              <span className={`w-5 h-5 rounded flex items-center justify-center font-bold text-[10px] ${type === t ? "" : "bg-slate-100 text-slate-500"} ${type === t ? m.bg : ""}`}>
+                {m.icon}
+              </span>
+              {m.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Link */}
+      <div>
+        <label className="text-[11px] font-medium text-slate-500 mb-1 block">Link de carpeta compartida</label>
+        <div className="relative">
+          <Link className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400" />
+          <input
+            type="url"
+            value={link}
+            onChange={(e) => setLink(e.target.value)}
+            className="input pl-7 text-xs"
+            placeholder={meta.placeholder}
+            autoFocus
+          />
+        </div>
+        <p className="text-[11px] text-slate-400 mt-1 flex items-start gap-1">
+          <AlertCircle className="w-3 h-3 shrink-0 mt-0.5 text-amber-500" />
+          {meta.hint}
+        </p>
+      </div>
+
+      {/* Description */}
+      <div>
+        <label className="text-[11px] font-medium text-slate-500 mb-1 block">
+          Descripción <span className="text-slate-400 font-normal">(para qué sirve esta carpeta)</span>
+        </label>
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          rows={2}
+          className="input text-xs resize-none"
+          placeholder="ej: Contratos vigentes de locatarios, renovaciones y acuerdos especiales 2025"
+        />
+      </div>
+
+      <div className="flex gap-2">
+        <button onClick={handleAdd} disabled={saving || !link.trim()} className="btn-primary text-xs">
+          {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <FolderSync className="w-3 h-3" />}
+          {saving ? "Guardando…" : "Agregar fuente"}
+        </button>
+        <button onClick={onCancel} className="btn-ghost text-xs">
+          Cancelar
+        </button>
+      </div>
     </div>
   );
 }
@@ -420,7 +536,8 @@ export default function AdminPage() {
 
   // Sync sources
   const [syncSources, setSyncSources] = useState<SyncSource[]>([]);
-  const [syncingType, setSyncingType] = useState<"gdrive" | "onedrive" | null>(null);
+  const [syncingId, setSyncingId] = useState<string | null>(null);
+  const [showAddSource, setShowAddSource] = useState(false);
 
   // ── Data fetching ────────────────────────────────────────────────────────────
 
@@ -520,38 +637,48 @@ export default function AdminPage() {
 
   // ── Sync sources ─────────────────────────────────────────────────────────────
 
-  const saveSource = async (type: "gdrive" | "onedrive", link: string) => {
+  const addSource = async (type: "gdrive" | "onedrive", link: string, description: string) => {
     await fetch("/api/sync/sources", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ clientId: CLIENT_ID, sourceType: type, sharedLink: link }),
+      body: JSON.stringify({ clientId: CLIENT_ID, sourceType: type, sharedLink: link, description }),
+    });
+    await fetchSources();
+    setShowAddSource(false);
+  };
+
+  const updateSource = async (id: string, patch: { sharedLink?: string; description?: string }) => {
+    await fetch("/api/sync/sources", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, ...patch }),
     });
     await fetchSources();
   };
 
-  const syncSource = async (type: "gdrive" | "onedrive"): Promise<SyncResult | null> => {
-    const src = syncSources.find((s) => s.source_type === type);
+  const syncSource = async (id: string): Promise<SyncResult | null> => {
+    const src = syncSources.find((s) => s.id === id);
     if (!src?.shared_link) return null;
-    setSyncingType(type);
+    setSyncingId(id);
     try {
-      const endpoint = type === "gdrive" ? "/api/sync/gdrive" : "/api/sync/onedrive";
+      const endpoint = src.source_type === "gdrive" ? "/api/sync/gdrive" : "/api/sync/onedrive";
       const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clientId: CLIENT_ID, sharedLink: src.shared_link }),
+        body: JSON.stringify({ clientId: CLIENT_ID, sharedLink: src.shared_link, sourceId: id }),
       });
+      const data = await res.json();
       await fetchSources();
       await fetchDocs();
-      return res.json();
+      if (!res.ok) return null;
+      return data;
     } finally {
-      setSyncingType(null);
+      setSyncingId(null);
     }
   };
 
-  const deleteSource = async (type: "gdrive" | "onedrive") => {
-    const src = syncSources.find((s) => s.source_type === type);
-    if (!src) return;
-    await fetch(`/api/sync/sources?id=${src.id}`, { method: "DELETE" });
+  const deleteSource = async (id: string) => {
+    await fetch(`/api/sync/sources?id=${id}`, { method: "DELETE" });
     await fetchSources();
   };
 
@@ -738,7 +865,13 @@ export default function AdminPage() {
                     <span className="badge-slate">{docs.raw.length} archivos</span>
                   </div>
                   {docs.raw.length === 0 ? (
-                    <p className="text-xs text-slate-400 italic px-1">Sin documentos.</p>
+                    <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-center space-y-1.5">
+                      <p className="text-xs font-medium text-slate-600">Aún no hay documentos</p>
+                      <p className="text-[11px] text-slate-400 leading-relaxed">
+                        Arrastra archivos al área de subida para comenzar.
+                        Una vez subidos aparecerán aquí y podrás compilarlos con IA.
+                      </p>
+                    </div>
                   ) : (
                     <ul className="space-y-1.5">
                       {docs.raw.map((d) => {
@@ -834,21 +967,53 @@ export default function AdminPage() {
               <h2 className="font-display font-semibold text-slate-900 text-sm">Fuentes externas</h2>
             </div>
             <div className="flex-1 h-px bg-slate-200" />
-            <span className="text-xs text-slate-400">Google Drive · OneDrive</span>
+            {!showAddSource && (
+              <button
+                onClick={() => setShowAddSource(true)}
+                className="btn-primary text-xs"
+              >
+                <FolderSync className="w-3.5 h-3.5" />
+                Agregar fuente
+              </button>
+            )}
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            {(["gdrive", "onedrive"] as const).map((type) => (
-              <SyncSourceCard
-                key={type}
-                type={type}
-                source={syncSources.find((s) => s.source_type === type) ?? null}
-                syncing={syncingType === type}
-                onSave={(link) => saveSource(type, link)}
-                onSync={() => syncSource(type)}
-                onDelete={() => deleteSource(type)}
+          <div className="space-y-3">
+            {showAddSource && (
+              <AddSourceForm
+                onAdd={addSource}
+                onCancel={() => setShowAddSource(false)}
               />
-            ))}
+            )}
+
+            {syncSources.length === 0 && !showAddSource ? (
+              <div className="flex flex-col items-center justify-center gap-3 border-2 border-dashed border-slate-200 rounded-xl py-10 text-center">
+                <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center">
+                  <HardDrive className="w-5 h-5 text-slate-400" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-slate-600">Sin fuentes externas</p>
+                  <p className="text-xs text-slate-400 mt-0.5">Conecta carpetas de Google Drive o OneDrive para sincronizar documentos.</p>
+                </div>
+                <button onClick={() => setShowAddSource(true)} className="btn-primary text-xs">
+                  <FolderSync className="w-3.5 h-3.5" />
+                  Agregar primera fuente
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {syncSources.map((src) => (
+                  <SyncSourceRow
+                    key={src.id}
+                    source={src}
+                    syncing={syncingId === src.id}
+                    onSync={() => syncSource(src.id)}
+                    onUpdate={(patch) => updateSource(src.id, patch)}
+                    onDelete={() => deleteSource(src.id)}
+                  />
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="mt-4 flex items-start gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
@@ -857,7 +1022,7 @@ export default function AdminPage() {
               <strong className="text-slate-700">Credenciales requeridas:</strong>{" "}
               <code className="bg-slate-200 px-1 rounded">GOOGLE_SERVICE_ACCOUNT_JSON</code> y/o{" "}
               <code className="bg-slate-200 px-1 rounded">MICROSOFT_CLIENT_ID/SECRET/TENANT_ID</code>{" "}
-              en <code className="bg-slate-200 px-1 rounded">.env.local</code>. Ver <strong className="text-slate-700">README.md</strong>.
+              en las variables de entorno del servidor. Ver <strong className="text-slate-700">README.md</strong>.
             </p>
           </div>
         </div>

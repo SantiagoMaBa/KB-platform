@@ -5,7 +5,7 @@ import AppShell from "@/components/AppShell";
 import Header from "@/components/Header";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Send, Bot, User, RefreshCw, Sparkles } from "lucide-react";
+import { Send, Bot, User, RefreshCw, Sparkles, AlertTriangle, Settings } from "lucide-react";
 import { clsx } from "clsx";
 
 const CLIENT_ID = "plaza-demo";
@@ -29,12 +29,22 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [kbEmpty, setKbEmpty] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
+
+  useEffect(() => {
+    fetch(`/api/documents?clientId=${CLIENT_ID}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if ((data?.wiki?.length ?? 0) === 0) setKbEmpty(true);
+      })
+      .catch(() => {});
+  }, []);
 
   const sendMessage = async (content: string) => {
     if (!content.trim() || loading) return;
@@ -115,6 +125,24 @@ export default function ChatPage() {
       />
 
       <div className="flex-1 flex flex-col min-h-0 bg-slate-50">
+        {/* KB empty warning */}
+        {kbEmpty && (
+          <div className="shrink-0 flex items-center gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2.5">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+            <p className="text-xs text-amber-800 flex-1">
+              <span className="font-semibold">La KB no tiene documentos compilados.</span>{" "}
+              El asistente no tendrá contexto específico hasta que subas y compiles documentos en{" "}
+              <a href="/admin" className="underline font-semibold hover:text-amber-900">
+                Administrar KB
+              </a>.
+            </p>
+            <a href="/admin" className="shrink-0 flex items-center gap-1 text-[11px] font-medium text-amber-700 bg-amber-100 border border-amber-300 px-2 py-1 rounded-lg hover:bg-amber-200 transition-colors">
+              <Settings className="w-3 h-3" />
+              Configurar
+            </a>
+          </div>
+        )}
+
         {/* Messages */}
         <div className="flex-1 overflow-y-auto px-4 py-6">
           {messages.length === 0 ? (
