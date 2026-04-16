@@ -12,15 +12,15 @@ export async function GET(req: NextRequest) {
     .from("sync_sources")
     .select("*")
     .eq("client_id", clientId)
-    .order("source_type");
+    .order("created_at");
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json(data);
 }
 
-// POST /api/sync/sources — upsert a source
+// POST /api/sync/sources — crear nueva fuente
 export async function POST(req: NextRequest) {
-  const { clientId, sourceType, sharedLink } = await req.json();
+  const { clientId, sourceType, sharedLink, description } = await req.json();
 
   if (!clientId || !sourceType || !sharedLink) {
     return NextResponse.json(
@@ -35,15 +35,44 @@ export async function POST(req: NextRequest) {
 
   const { data, error } = await supabase
     .from("sync_sources")
-    .upsert(
-      { client_id: clientId, source_type: sourceType, shared_link: sharedLink },
-      { onConflict: "client_id,source_type" }
-    )
+    .insert({
+      client_id: clientId,
+      source_type: sourceType,
+      shared_link: sharedLink,
+      description: description ?? null,
+    })
     .select()
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json(data, { status: 201 });
+}
+
+// PATCH /api/sync/sources — actualizar descripción o link
+export async function PATCH(req: NextRequest) {
+  const { id, sharedLink, description } = await req.json();
+
+  if (!id) {
+    return NextResponse.json({ error: "id requerido" }, { status: 400 });
+  }
+
+  const patch: Record<string, string | null> = {};
+  if (sharedLink !== undefined) patch.shared_link = sharedLink;
+  if (description !== undefined) patch.description = description;
+
+  if (Object.keys(patch).length === 0) {
+    return NextResponse.json({ error: "Nada que actualizar" }, { status: 400 });
+  }
+
+  const { data, error } = await supabase
+    .from("sync_sources")
+    .update(patch)
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json(data);
 }
 
 // DELETE /api/sync/sources?id=xxx
