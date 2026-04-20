@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { rawPath, generateAndUploadIndex } from "@/lib/kb";
-import { excelToMarkdown, docxToMarkdown, toMdFilename } from "@/lib/excel";
+import { excelToMarkdown, excelToStructuredData, docxToMarkdown, toMdFilename } from "@/lib/excel";
 import { isPdf, pdfToMarkdown } from "@/lib/pdf";
 
 export const runtime = "nodejs";
@@ -54,6 +54,24 @@ export async function POST(req: NextRequest) {
     } else if (ext === ".xlsx" || ext === ".csv") {
       content = excelToMarkdown(buffer, file.name);
       storedFilename = toMdFilename(file.name);
+
+      // Store structured data for SQL metrics
+      const datasets = excelToStructuredData(buffer, file.name);
+      for (const ds of datasets) {
+        await supabase.from("structured_datasets").upsert(
+          {
+            client_id:    clientId,
+            filename:     file.name,
+            sheet_name:   ds.sheetName,
+            display_name: `${(displayName?.trim() || file.name)} — ${ds.sheetName}`,
+            headers:      ds.headers,
+            rows:         ds.rows,
+            row_count:    ds.rowCount,
+            updated_at:   new Date().toISOString(),
+          },
+          { onConflict: "client_id,filename,sheet_name" }
+        );
+      }
 
     } else if (ext === ".docx") {
       content = await docxToMarkdown(buffer, file.name);

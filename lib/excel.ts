@@ -111,6 +111,62 @@ export function toMdFilename(filename: string): string {
 /** @deprecated Use toMdFilename */
 export const excelFilenameToMd = toMdFilename;
 
+// ── Structured data extraction ────────────────────────────────────────────────
+
+export interface SheetData {
+  sheetName: string;
+  headers:   string[];
+  rows:      Record<string, unknown>[];
+  rowCount:  number;
+}
+
+/**
+ * Extrae datos estructurados (headers + rows como JSON) de un archivo Excel o CSV.
+ * Cada hoja del workbook se devuelve como un SheetData separado.
+ * Se limita a MAX_ROWS filas por hoja (igual que la conversión a Markdown).
+ *
+ * Uso: para guardar en structured_datasets y calcular métricas SQL (sum/avg/count/etc.)
+ * sin depender del LLM.
+ */
+export function excelToStructuredData(buffer: Buffer, filename: string): SheetData[] {
+  const workbook = XLSX.read(buffer, { type: "buffer" });
+  const result: SheetData[] = [];
+
+  for (const sheetName of workbook.SheetNames) {
+    const sheet = workbook.Sheets[sheetName];
+    const raw = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
+      header:    1,
+      defval:    "",
+      blankrows: false,
+    }) as unknown[][];
+
+    if (raw.length < 2) continue; // need at least header + 1 data row
+
+    // Extract and clean headers (skip empty header columns)
+    const rawHeaders = raw[0].map(String).map((h) => h.trim());
+    const validCols: number[] = [];
+    rawHeaders.forEach((h, i) => { if (h !== "") validCols.push(i); });
+    const headers = validCols.map((i) => rawHeaders[i]);
+
+    if (headers.length === 0) continue;
+
+    // Build row objects, capped at MAX_ROWS
+    const dataRows = raw.slice(1, MAX_ROWS + 1);
+    const rows: Record<string, unknown>[] = dataRows.map((row) => {
+      const obj: Record<string, unknown> = {};
+      validCols.forEach((col, idx) => {
+        const val = row[col];
+        obj[headers[idx]] = val === "" ? null : val;
+      });
+      return obj;
+    });
+
+    result.push({ sheetName, headers, rows, rowCount: rows.length });
+  }
+
+  return result;
+}
+
 // ── Word (.docx) ──────────────────────────────────────────────────────────────
 
 /**

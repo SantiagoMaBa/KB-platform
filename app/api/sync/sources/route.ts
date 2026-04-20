@@ -48,17 +48,20 @@ export async function POST(req: NextRequest) {
   return NextResponse.json(data, { status: 201 });
 }
 
-// PATCH /api/sync/sources — actualizar descripción o link
+// PATCH /api/sync/sources — actualizar campos de una fuente
 export async function PATCH(req: NextRequest) {
-  const { id, sharedLink, description } = await req.json();
+  const { id, sharedLink, description, name, autoSync, syncIntervalHours } = await req.json();
 
   if (!id) {
     return NextResponse.json({ error: "id requerido" }, { status: 400 });
   }
 
-  const patch: Record<string, string | null> = {};
-  if (sharedLink !== undefined) patch.shared_link = sharedLink;
-  if (description !== undefined) patch.description = description;
+  const patch: Record<string, string | number | boolean | null> = {};
+  if (sharedLink          !== undefined) patch.shared_link          = sharedLink;
+  if (description         !== undefined) patch.description          = description;
+  if (name                !== undefined) patch.name                 = name;
+  if (autoSync            !== undefined) patch.auto_sync            = autoSync;
+  if (syncIntervalHours   !== undefined) patch.sync_interval_hours  = syncIntervalHours;
 
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ error: "Nada que actualizar" }, { status: 400 });

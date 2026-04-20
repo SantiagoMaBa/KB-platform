@@ -34,6 +34,7 @@ interface SyncSource {
   id: string; source_type: SourceType; name: string | null;
   shared_link: string; description: string | null; folder_name: string | null;
   last_sync_at: string | null; last_sync_count: number; last_sync_error: string | null;
+  auto_sync: boolean; sync_interval_hours: number;
 }
 
 interface SyncResult {
@@ -113,21 +114,27 @@ function StagedFileRow({ staged, index, onChange, onRemove }: {
 function SyncSourceRow({ source, syncing, onSync, onUpdate, onDelete }: {
   source: SyncSource; syncing: boolean;
   onSync: () => Promise<SyncResult | null>;
-  onUpdate: (patch: { name?: string | undefined; sharedLink?: string; description?: string }) => Promise<void>;
+  onUpdate: (patch: { name?: string | undefined; sharedLink?: string; description?: string; autoSync?: boolean }) => Promise<void>;
   onDelete: () => Promise<void>;
 }) {
   const meta = SOURCE_META[source.source_type];
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing]   = useState(false);
   const [editName, setEditName] = useState(source.name ?? undefined);
   const [editLink, setEditLink] = useState(source.shared_link);
   const [editDesc, setEditDesc] = useState(source.description ?? "");
-  const [saving, setSaving]   = useState(false);
+  const [editAutoSync, setEditAutoSync] = useState(source.auto_sync);
+  const [saving, setSaving]     = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [lastResult, setLastResult] = useState<SyncResult | null>(null);
 
   async function handleSave() {
     setSaving(true);
-    await onUpdate({ name: editName?.trim() || undefined, sharedLink: editLink.trim(), description: editDesc.trim() });
+    await onUpdate({
+      name:      editName?.trim() || undefined,
+      sharedLink: editLink.trim(),
+      description: editDesc.trim(),
+      autoSync:   editAutoSync,
+    });
     setSaving(false); setEditing(false);
   }
 
@@ -152,6 +159,12 @@ function SyncSourceRow({ source, syncing, onSync, onUpdate, onDelete }: {
             <>
               <p className="text-[11px] text-slate-400 mt-0.5 truncate">{source.shared_link}</p>
               {source.description && <p className="text-xs text-slate-600 mt-1">{source.description}</p>}
+              {source.auto_sync && (
+                <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-1.5 py-0.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  Auto-sync activo
+                </span>
+              )}
             </>
           )}
         </div>
@@ -186,6 +199,17 @@ function SyncSourceRow({ source, syncing, onSync, onUpdate, onDelete }: {
           <div>
             <label className="text-[11px] font-medium text-slate-500 mb-1 block">Descripción / propósito</label>
             <textarea value={editDesc} onChange={(e) => setEditDesc(e.target.value)} rows={2} className="input text-xs resize-none w-full" placeholder="Para qué sirve esta fuente, qué tipo de archivos contiene…" />
+          </div>
+          <div className="flex items-center gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => setEditAutoSync(!editAutoSync)}
+              className={`relative w-8 h-4 rounded-full transition-colors shrink-0 ${editAutoSync ? "bg-brand-600" : "bg-slate-200"}`}
+            >
+              <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform ${editAutoSync ? "translate-x-4" : "translate-x-0.5"}`} />
+            </button>
+            <span className="text-xs text-slate-700 font-medium">Sync automático</span>
+            <span className="text-[11px] text-slate-400">(diario, 8am UTC)</span>
           </div>
           <div className="flex gap-2">
             <button onClick={handleSave} disabled={saving || !editLink.trim()} className="btn-primary text-xs">
@@ -299,7 +323,7 @@ export default function FuentesTab({ clientId, clientName }: { clientId: string;
     setNewName(""); setNewLink(""); setNewDesc("");
   };
 
-  const updateSource = async (id: string, patch: { name?: string; sharedLink?: string; description?: string }) => {
+  const updateSource = async (id: string, patch: { name?: string; sharedLink?: string; description?: string; autoSync?: boolean }) => {
     await fetch("/api/sync/sources", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },

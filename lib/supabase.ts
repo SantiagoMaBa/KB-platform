@@ -57,6 +57,18 @@ export interface MetricWithResult extends MetricDefinition {
   latest_result?: MetricResult | null;
 }
 
+export interface StructuredDataset {
+  id:           string;
+  client_id:    string;
+  filename:     string;
+  sheet_name:   string;
+  display_name: string | null;
+  headers:      string[];
+  row_count:    number;
+  created_at:   string;
+  updated_at:   string;
+}
+
 export type Database = {
   public: {
     Tables: {
@@ -128,18 +140,30 @@ export type Database = {
       };
       sync_sources: {
         Row: {
-          id:               string;
-          client_id:        string;
-          name:             string | null;
-          source_type:      SourceType;
-          shared_link:      string;
-          folder_name:      string | null;
-          description:      string | null;
-          last_sync_at:     string | null;
-          last_sync_count:  number;
-          last_sync_error:  string | null;
-          created_at:       string;
+          id:                   string;
+          client_id:            string;
+          name:                 string | null;
+          source_type:          SourceType;
+          shared_link:          string;
+          folder_name:          string | null;
+          description:          string | null;
+          last_sync_at:         string | null;
+          last_sync_count:      number;
+          last_sync_error:      string | null;
+          auto_sync:            boolean;
+          sync_interval_hours:  number;
+          created_at:           string;
         };
+      };
+      structured_datasets: {
+        Row:    StructuredDataset & { rows: Record<string, unknown>[] };
+        Insert: Omit<StructuredDataset, "id" | "created_at" | "updated_at"> & {
+          rows: Record<string, unknown>[];
+          id?: string;
+        };
+        Update: Partial<Omit<StructuredDataset, "id" | "client_id" | "created_at"> & {
+          rows?: Record<string, unknown>[];
+        }>;
       };
       metric_definitions: {
         Row:    MetricDefinition;

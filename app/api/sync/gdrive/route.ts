@@ -24,7 +24,7 @@ import {
   getFolderName,
 } from "@/lib/gdrive";
 import { isPdf, pdfToMarkdown } from "@/lib/pdf";
-import { excelToMarkdown, docxToMarkdown, toMdFilename } from "@/lib/excel";
+import { excelToMarkdown, excelToStructuredData, docxToMarkdown, toMdFilename } from "@/lib/excel";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -123,6 +123,24 @@ export async function POST(req: NextRequest) {
           const markdown = excelToMarkdown(rawBuffer, file.name);
           mdFilename = toMdFilename(file.name);
           mdBuffer = Buffer.from(markdown, "utf-8");
+
+          // Store structured data for SQL metrics
+          const datasets = excelToStructuredData(rawBuffer, file.name);
+          for (const ds of datasets) {
+            await supabase.from("structured_datasets").upsert(
+              {
+                client_id:    clientId,
+                filename:     file.name,
+                sheet_name:   ds.sheetName,
+                display_name: `${file.name} — ${ds.sheetName}`,
+                headers:      ds.headers,
+                rows:         ds.rows,
+                row_count:    ds.rowCount,
+                updated_at:   new Date().toISOString(),
+              },
+              { onConflict: "client_id,filename,sheet_name" }
+            );
+          }
 
         } else if (isDocx(file.name)) {
           const rawBuffer = await downloadFile(file.id);

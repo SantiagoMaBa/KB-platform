@@ -4,9 +4,9 @@ import { useState, useEffect, useCallback } from "react";
 import {
   Plus, Loader2, Trash2, Edit2, X, Save, CheckCircle,
   TrendingUp, TrendingDown, Minus, Zap, AlertCircle,
-  Play, RefreshCw, Eye, EyeOff,
+  Play, RefreshCw, Eye, EyeOff, Table2,
 } from "lucide-react";
-import type { MetricWithResult, CalcType, DisplayFormat, AlertDirection } from "@/lib/supabase";
+import type { MetricWithResult, CalcType, DisplayFormat, AlertDirection, StructuredDataset } from "@/lib/supabase";
 
 // ── Format value ──────────────────────────────────────────────────────────────
 
@@ -52,12 +52,20 @@ function alertTriggered(metric: MetricWithResult): boolean {
 
 // ── Metric Form ───────────────────────────────────────────────────────────────
 
+type Aggregation = "sum" | "avg" | "count" | "min" | "max" | "last";
+
 interface MetricFormData {
   name:            string;
   description:     string;
   calc_type:       CalcType;
   ai_prompt:       string;
   manual_value:    string;
+  // SQL fields
+  sql_dataset_id:     string;
+  sql_column:         string;
+  sql_aggregation:    Aggregation;
+  sql_filter_column:  string;
+  sql_filter_value:   string;
   display_format:  DisplayFormat;
   display_prefix:  string;
   display_suffix:  string;
@@ -74,6 +82,11 @@ const EMPTY_FORM: MetricFormData = {
   calc_type:       "manual",
   ai_prompt:       "",
   manual_value:    "",
+  sql_dataset_id:    "",
+  sql_column:        "",
+  sql_aggregation:   "sum",
+  sql_filter_column: "",
+  sql_filter_value:  "",
   display_format:  "number",
   display_prefix:  "",
   display_suffix:  "",
@@ -104,6 +117,11 @@ function MetricForm({
       calc_type:       initial.calc_type,
       ai_prompt:       (cfg?.prompt as string) ?? "",
       manual_value:    String(initial.latest_result?.value_numeric ?? ""),
+      sql_dataset_id:    (cfg?.dataset_id as string) ?? "",
+      sql_column:        (cfg?.column as string) ?? "",
+      sql_aggregation:   ((cfg?.aggregation as Aggregation) ?? "sum"),
+      sql_filter_column: (cfg?.filter_column as string) ?? "",
+      sql_filter_value:  (cfg?.filter_value as string) ?? "",
       display_format:  initial.display_format,
       display_prefix:  initial.display_prefix ?? "",
       display_suffix:  initial.display_suffix ?? "",
@@ -117,6 +135,21 @@ function MetricForm({
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState<string | null>(null);
 
+  // Datasets for SQL selector
+  const [datasets, setDatasets]   = useState<StructuredDataset[]>([]);
+  const [loadingDS, setLoadingDS] = useState(false);
+
+  useEffect(() => {
+    if (form.calc_type !== "sql") return;
+    setLoadingDS(true);
+    fetch(`/api/admin/datasets?clientId=${clientId}`)
+      .then((r) => r.json())
+      .then((d) => setDatasets(Array.isArray(d) ? d : []))
+      .finally(() => setLoadingDS(false));
+  }, [form.calc_type, clientId]);
+
+  const selectedDataset = datasets.find((d) => d.id === form.sql_dataset_id);
+
   const set = (patch: Partial<MetricFormData>) => setForm((f) => ({ ...f, ...patch }));
 
   async function handleSave(e: React.FormEvent) {
@@ -125,11 +158,22 @@ function MetricForm({
     setSaving(true);
     setError(null);
 
-    const calc_config = form.calc_type === "ai_query"
-      ? { prompt: form.ai_prompt.trim() }
-      : form.calc_type === "manual"
-      ? null
-      : null;
+    const calc_config =
+      form.calc_type === "ai_query"
+        ? { prompt: form.ai_prompt.trim() }
+        : form.calc_type === "sql"
+        ? {
+            dataset_id:    form.sql_dataset_id,
+            dataset_label: selectedDataset
+              ? `${selectedDataset.display_name ?? selectedDataset.filename} — ${selectedDataset.sheet_name}`
+              : form.sql_dataset_id,
+            column:        form.sql_column,
+            aggregation:   form.sql_aggregation,
+            ...(form.sql_filter_column && form.sql_filter_value
+              ? { filter_column: form.sql_filter_column, filter_value: form.sql_filter_value }
+              : {}),
+          }
+        : null; // manual
 
     const body: Record<string, unknown> = {
       client_id:       clientId,
@@ -222,9 +266,9 @@ function MetricForm({
           <div className="flex gap-2">
             {(
               [
-                { v: "manual",   l: "Manual",        d: "Ingresas el valor tú mismo",           disabled: false },
-                { v: "ai_query", l: "Consulta IA",    d: "El sistema pregunta a la KB",           disabled: false },
-                { v: "sql",      l: "SQL (pronto)",   d: "Query sobre datos estructurados",       disabled: true  },
+                { v: "manual",   l: "Manual",       d: "Ingresas el valor tú mismo",    disabled: false },
+                { v: "ai_query", l: "Consulta IA",  d: "El sistema pregunta a la KB",   disabled: false },
+                { v: "sql",      l: "Excel / CSV",  d: "Agrega datos de tu spreadsheet", disabled: false },
               ] as { v: CalcType; l: string; d: string; disabled: boolean }[]
             ).map(({ v, l, d, disabled }) => (
               <button
@@ -281,6 +325,113 @@ function MetricForm({
             <p className="text-[11px] text-slate-400 mt-1">
               Podrás actualizar este valor en cualquier momento desde aquí.
             </p>
+          </div>
+        )}
+
+        {form.calc_type === "sql" && (
+          <div className="space-y-3 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+              <Table2 className="w-3.5 h-3.5" />
+              Configurar Excel / CSV
+            </div>
+
+            {/* Dataset selector */}
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">
+                Dataset <span className="text-slate-400 font-normal">(hoja del Excel subido)</span>
+              </label>
+              {loadingDS ? (
+                <div className="flex items-center gap-2 text-slate-400 text-xs py-2">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Cargando datasets…
+                </div>
+              ) : datasets.length === 0 ? (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  No hay Excel/CSV subidos para este cliente. Sube un archivo en la pestaña Fuentes.
+                </p>
+              ) : (
+                <select
+                  value={form.sql_dataset_id}
+                  onChange={(e) => set({ sql_dataset_id: e.target.value, sql_column: "", sql_filter_column: "" })}
+                  className="input w-full text-sm"
+                >
+                  <option value="">Selecciona un dataset…</option>
+                  {datasets.map((ds) => (
+                    <option key={ds.id} value={ds.id}>
+                      {ds.display_name ?? `${ds.filename} — ${ds.sheet_name}`}
+                      {" "}({ds.row_count} filas)
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            {/* Column + aggregation */}
+            {selectedDataset && (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Columna a calcular</label>
+                    <select
+                      value={form.sql_column}
+                      onChange={(e) => set({ sql_column: e.target.value })}
+                      className="input w-full text-sm"
+                    >
+                      <option value="">Selecciona columna…</option>
+                      {selectedDataset.headers.map((h) => (
+                        <option key={h} value={h}>{h}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Agregación</label>
+                    <select
+                      value={form.sql_aggregation}
+                      onChange={(e) => set({ sql_aggregation: e.target.value as Aggregation })}
+                      className="input w-full text-sm"
+                    >
+                      <option value="sum">Suma (SUM)</option>
+                      <option value="avg">Promedio (AVG)</option>
+                      <option value="count">Contar filas (COUNT)</option>
+                      <option value="min">Mínimo (MIN)</option>
+                      <option value="max">Máximo (MAX)</option>
+                      <option value="last">Último valor (LAST)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Optional filter */}
+                <div>
+                  <p className="text-[11px] font-medium text-slate-500 mb-1.5">Filtro opcional</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] text-slate-400 mb-1">Filtrar por columna</label>
+                      <select
+                        value={form.sql_filter_column}
+                        onChange={(e) => set({ sql_filter_column: e.target.value, sql_filter_value: "" })}
+                        className="input w-full text-xs"
+                      >
+                        <option value="">Sin filtro</option>
+                        {selectedDataset.headers.filter((h) => h !== form.sql_column).map((h) => (
+                          <option key={h} value={h}>{h}</option>
+                        ))}
+                      </select>
+                    </div>
+                    {form.sql_filter_column && (
+                      <div>
+                        <label className="block text-[10px] text-slate-400 mb-1">Valor a filtrar</label>
+                        <input
+                          type="text"
+                          value={form.sql_filter_value}
+                          onChange={(e) => set({ sql_filter_value: e.target.value })}
+                          placeholder="Abril 2026, Sucursal Norte…"
+                          className="input w-full text-xs"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         )}
 
@@ -476,7 +627,7 @@ export default function MetricasTab({ clientId }: { clientId: string }) {
     fetchMetrics();
   }
 
-  const aiMetrics = metrics.filter((m) => m.calc_type === "ai_query");
+  const computableMetrics = metrics.filter((m) => m.calc_type === "ai_query" || m.calc_type === "sql");
 
   return (
     <div className="space-y-4">
@@ -487,7 +638,7 @@ export default function MetricasTab({ clientId }: { clientId: string }) {
             {metrics.length} métrica{metrics.length !== 1 ? "s" : ""} definida{metrics.length !== 1 ? "s" : ""}
           </p>
         </div>
-        {aiMetrics.length > 0 && (
+        {computableMetrics.length > 0 && (
           <button
             onClick={() => handleCompute()}
             disabled={computing === "all"}
@@ -592,7 +743,7 @@ export default function MetricasTab({ clientId }: { clientId: string }) {
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold text-slate-800 text-sm">{metric.name}</span>
                       <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 font-medium">
-                        {metric.calc_type === "ai_query" ? "IA" : metric.calc_type === "manual" ? "Manual" : "SQL"}
+                        {metric.calc_type === "ai_query" ? "IA" : metric.calc_type === "manual" ? "Manual" : "Excel"}
                       </span>
                       {!metric.is_visible && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-400">
@@ -619,7 +770,7 @@ export default function MetricasTab({ clientId }: { clientId: string }) {
 
                   {/* Actions */}
                   <div className="flex items-center gap-1 shrink-0">
-                    {metric.calc_type === "ai_query" && (
+                    {(metric.calc_type === "ai_query" || metric.calc_type === "sql") && (
                       <button
                         onClick={() => handleCompute(metric.id)}
                         disabled={computing === metric.id}
